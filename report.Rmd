@@ -1,0 +1,402 @@
+---
+title: "GPU-optimized math routines in Stan"
+author: |
+  | Rok Češnovar, Davor Sluga, Jure Demšar, Steve Bronder, Erik Štrumbelj
+date: "Apr 15, 2018"
+output: pdf_document
+bibliography: report.bib
+---
+
+```{r include = FALSE}
+# helper function for plotting
+
+#  | Faculty of Information and Computer Science, University of Ljubljana
+
+# wd
+#setwd("D:/Projects/Stan/StanCon2018")
+setwd("d:/work/bitbucket/l1-7542_stan/StanCon2018/")
+
+
+# includes
+library(ggplot2)
+library(plyr)
+library(rstan)
+library(cowplot)
+library(reshape)
+
+speedup_plot <- function(stan_files) {
+	# load data ----
+	stan_summary <- NULL
+	stan_summary_log <- NULL
+	
+	for (fn in stan_files) {
+		summary <- readRDS(fn)
+		
+		stan_summary <- rbind(stan_summary, data.frame(N = summary$N,
+																									 time = summary$time,
+																									 GPU = summary$GPU))
+		
+		stan_summary_log <- rbind(stan_summary_log, data.frame(N = log(summary$N, 10),
+																									 time = log(summary$time, 10),
+																									 GPU = summary$GPU))
+	}
+	
+	# get mean and CI ----
+	stan_mean <- ddply(.data = stan_summary,
+										 .variables = ~ N + GPU,
+										 .fun = summarize,
+										 time_mean = mean(time),
+										 low_time = quantile(time, 0.025, na.rm = TRUE),
+										 high_time = quantile(time, 0.975, na.rm = TRUE))
+	
+	stan_mean_log <- ddply(.data = stan_summary_log,
+										 .variables = ~ N + GPU,
+										 .fun = summarize,
+										 time_mean = mean(time),
+										 low_time = quantile(time, 0.025, na.rm = TRUE),
+										 high_time = quantile(time, 0.975, na.rm = TRUE))
+	
+	# plot ----
+	left_plot <- ggplot(data = stan_mean, aes(x = N, y = time_mean, group = GPU, colour = GPU)) +
+		geom_point(data = stan_summary, aes(x = N, y = time, colour = GPU), size = 4, alpha = 0.3, shape = 16) +
+		geom_line(size = 1) +
+		ylab("Time [s]") +
+		xlab("N") +
+		theme_minimal() +
+		theme(legend.position = "bottom", legend.title = element_blank()) +
+		scale_colour_manual(values = c("#fc8d59", "#91bfdb"), labels = c("CPU", "GPU"))
+	
+	
+	right_plot <- ggplot(data = stan_mean_log, aes(x = N, y = time_mean, group = GPU, colour = GPU)) +
+		geom_point(data = stan_summary_log, aes(x = N, y = time, colour = GPU), size = 4, alpha = 0.3, shape = 16) +
+		geom_line(size = 1) +
+		ylab(expression(log[10](time)~"[s]")) +
+		xlab(expression(log[10](N))) +
+		theme_minimal() +
+		theme(legend.position = "bottom", legend.title = element_blank()) +
+		scale_colour_manual(values = c("#fc8d59", "#91bfdb"), labels = c("CPU", "GPU"))
+	
+	plot_grid(left_plot, right_plot, ncol = 2, nrow = 1, scale = 0.9)
+}
+
+# scripts for data generation
+source("./_Simulations/GP_data_generator.R")
+source("./_Simulations/GPP_data_generator.R")
+
+# RERUN SIMULATIONS?
+# !!! WARNING: UNCOMMENTING THE TWO LINES BELOW RERUNS ALL SIMULATIONS
+# !!! THIS MIGHT TAKE SEVERAL HOURS TO COMPLETE
+# !!! YOU ALSO NEED TO SET FOLDERS FOR cmdstan and gpustan
+
+# source("./_Simulations/GP.R")
+# source("./_Simulations/GPP.R")
+
+```
+
+# Introduction
+
+???
+
+# GPU implementation
+
+Currently, we aim at speeding up the biggest computational bottlenecks on the GPU, while the remaining (non-parallelized) Stan code is executed on the CPU. Therefore, we move the data to and from the GPU for each GPU-parallelized function. Removing this often unnecessary data transfer to and from the GPU is one of the main priorities of  future work.
+
+The biggest bottlenecks identified and parallelized so far are the Cholesky decomposition, its derivative and the derivative of solving $Ax = B$, where A is a lower triangular matrix. In order to implement all three bottlenecks on the GPU, the following GPU functions were implemented (some are extensions of our previous work in [@Cesnovar2017]): 
+
+\begin{itemize}
+\item	matrix transpose,
+\item	multiplication of a matrix or its diagonal with a scalar,
+\item	subtraction of matrices,
+\item	copying submatrices,
+\item	matrix multiplication,
+\item	lower triangular matrix inverse, and
+\item	Cholesky decomposition.
+\end{itemize}
+
+Our focus was on the latter three computational building blocks, the rest either have trivial parallelizations for GPU architectures. For instance, in multiplication of a $m \times n$ matrix with a scalar, we create $m \times n$ threads, where each thread is assigned a single multiplication. No further optimizations were done for these functions. 
+
+## Matrix multiplication
+
+Our matrix multiplication implementation is based on implementations in cuBLAS [@CUBLAS] and clBLAST [@clBLAST]. The only optimizations that are used is assigning additional work to threads in large matrix multiplications and the use of tiling in local memory. Both are widely known optimization techniques and are known to boost performance on all GPU architectures. We separately deal with matrix multiplication $A \times A^T$. In this case, we know that the resulting matrix is symmetric and can reduce the number of multiplications by half. 
+
+## Inverting a lower triangular matrix
+
+The mostly widely used CPU algorithms for inverting a lower triangular matrix are not suitable for many-core architectures such as a GPU. The solution proposed in [@Mahfoudhi2012] replaces most of the sequential code with matrix multiplications, which are more GPU-suitable operations.
+
+The basic idea is to split the input matrix in blocks as shown in Figure \ref{fig:blockInverse}. We first calculate the matrix inversion of the smaller matrices $A1$ and $A2$. These inverses are done using the basic sequential algorithms, with small amounts of parallelism. The final step is the calculation of $C3 = -C2 \times A3 \times C1$. In order to fully utilize the GPU, the number of blocks in the first step should be larger power of 2. The exact number of blocks depends on the input matrix size and the GPU used. 
+
+![\label{fig:blockInverse}Blocked version of the lower triangualar matrix inverse.](_Figures/blockInverse.pdf)
+
+## Cholesky decompostion
+
+Our GPU implementation for the Cholesky decompostion is based on the blocked algorithm, proposed in [@LouterNool1992]. Similar to the implementation of the lower triangular matrix inverse, we first split the input matrix into blocks, as shown in Figure \ref{fig:blockCholesky}. We then calculate the Cholesky decomposition of $A_{11}$ with a basic algorithm with less parallelism. We also calculate the inverse of $L_{11}^T$. $L_{21}$ and $L_{22}$ are calculated as follows:
+
+$$L_{21} = A_{21} (L_{11}^T)^{(-1)}$$
+
+$$L_{22} = A_{22} - L_{21} (L_{21})^T$$
+
+Matrix multiplications are implemented as discussed in the previous subsection. For larger matrices $(n > 1000)$, the algorithm is executed in 2 levels. For example, when $n = 2000$, the size of the block $A_{11}$ is $m = 400$. Using the basic sequential algorithm for such a large $m$ would be slow, so we apply the initial algorithm to $A_{11}$, as if its the input matrix, with $m = 100$.
+
+![\label{fig:blockCholesky}Blocked version of the Cholesky decomposition.](_Figures/blockCholesky.pdf)
+
+The implementation of the derivative of the Cholesky decomposition is based on the blocked version presented in [@Murray2016]. This algorithm is cache friendly and uses GPU-suitable matrix operations. Similar to the inversion and cholesky decomposition, the input matrix is split into smaller blocks on which we then perform various already discussed matrix operations: transpose, multiplication, lower triangular matrix inversion and subtraction. For details on the algorithm, refer to [@Murray2016].
+
+
+# Example 1: Gaussian process regression
+
+The models that would benefit the most from the currently parallelized computational building blocks are models large covariance matrices. A good example of such a model are Gaussian processes (GP). We used 1D GP regression with hyperpriors example from the case study [@Betancourt2017] (see appendix).
+
+We generated a toy dataset based on a simple functional relationship between $x$ and $y$ with added Gaussian noise:
+
+$$x_i \sim_{\text{iid}} U(-10,10)$$
+$$y_i | x_i \sim_{\text{iid}} N \left( f(x), \frac{1}{10} \right), i = 1..n,$$
+where $f(x) = \beta(x + x^2 - x^3 + 100 \sin 2x - \alpha)$. Parameters $\beta$ and $\alpha$ were set so that the $E[f] = 0$ and $Var[f] = 1$. Figure \ref{fig:GP_fit} shows that there is no difference between GPU and CPU fits.
+
+```{r echo = FALSE, fig.cap="\\label{fig:GP_fit}Comparison of CPU and GPU fits."}
+
+# load  results ----
+stan_files <- list.files(
+  path = "./_Simulations/_Output/GP/",
+  pattern = "GP", full.names = T
+)
+
+for (fn in stan_files) {
+  summary <- readRDS(fn)
+  
+  # take one fit on largest N ----
+  if (summary$N == 100 && summary$iteration == 1)
+  {
+
+    if (summary$GPU)
+      gpu_predict <- data.frame(x = summary$x,
+                                y = summary$y,
+                                x_predict = summary$x_predict,
+                                y_predict = summary$y_predict,
+                                GPU = TRUE)
+    else
+      cpu_predict <- data.frame(x = summary$x,
+                                y = summary$y,
+                                x_predict = summary$x_predict,
+                                y_predict = summary$y_predict,
+                                GPU = FALSE)
+  }
+}
+
+df <- rbind(gpu_predict, cpu_predict)
+
+ggplot() +
+  geom_point(data = gpu_predict, aes(x = x, y = y), alpha = 0.3, shape = 16) +
+  geom_line(data = df, aes(x = x_predict, y = y_predict, colour = GPU), size = 1) +
+  theme_minimal() +
+  theme(legend.position = "bottom", legend.title = element_blank()) +
+  scale_colour_manual(values = c("#fc8d59", "#91bfdb"), labels = c("CPU", "GPU"))
+
+```
+
+We measured the computation times of the CPU and GPU implementations of our model in Stan for different input sizes. The measurements include sampling and warmup iterations, but not model compilation time. The experiments were executed on a desktop computer with a Intel Xeon CPU running at $2.3 GHz$ and a NVIDIA GTX1070 GPU. Results are shown in Figure \ref{fig:GP_results}. Due to unnecessary data transfers, the GPU implementation is not faster than the CPU version for smaller input sizes ($n < 600$). For larger $n$, the data transfer become negligible and we can observe a speedup of $~13$ for $n = 3000$. Speedup measurements for larger $n$ were infeasible due to large CPU computation times, however, as the speedups do not yet taper off, we expect that the maximum speedup is even larger than $13$.
+
+```{r echo = FALSE, fig.cap="\\label{fig:GP_results}Visualizations of speedup when using our GPU approach compared to default CPU implementation."}
+
+# load  results ----
+stan_files <- list.files(
+	path = "./_Simulations/_Output/GP/",
+	pattern = "GP", full.names = T
+)
+
+# plot
+speedup_plot(stan_files)
+```
+
+# Example 2: Spatial Gaussian predictive process
+
+TODO: Description of the model.
+
+Figure \ref{fig:GPP_parameters} shows that there is no difference in fitter parameters between the GPU and CPU approaches.
+
+```{r echo = FALSE, fig.cap="\\label{fig:GPP_parameters}Comparison of calculated parameters between CPU and GPU."}
+
+# load  results ----
+stan_files <- list.files(
+	path = "./_Simulations/_Output/GPP/",
+	pattern = "GPP", full.names = T
+)
+
+stan_summary <- NULL
+for (fn in stan_files) {
+	summary <- readRDS(fn)
+	
+	if (summary$N == 200)
+	{
+		stan_summary <- rbind(stan_summary, data.frame(GPU = summary$GPU,
+																								Eta = summary$parameters_fit$eta,
+																								Sigma = summary$parameters_fit$sigma,
+																								Phi = summary$parameters_fit$phi,
+																								Beta = summary$parameters_fit$beta
+																								))
+	}
+}
+
+# melt ----
+stan_melt <- melt(stan_summary, id=c("GPU"))
+
+# plot ----
+ggplot(stan_melt, aes(x = GPU, y = value, fill = GPU)) +
+  facet_wrap(~ variable, scales="free", ncol = 4) +
+  stat_boxplot(geom ='errorbar') + 
+  geom_boxplot() +
+  ylab("") +
+  xlab("Parameter") +
+  theme_minimal() +
+  theme(legend.position = "none") +
+  theme(panel.spacing.x = unit(4, "lines")) +
+  scale_x_discrete(labels=c("CPU", "GPU")) +
+  scale_fill_manual(values = c("#fc8d59", "#91bfdb"))
+```
+
+TODO: Text.
+
+Results are shown in Figure \ref{fig:GPP_results}.
+
+```{r echo = FALSE, fig.cap="\\label{fig:GPP_results}Visualizations of speedup when using our GPU approach compared to default CPU implementation."}
+
+# load  results ----
+stan_files <- list.files(
+	path = "./_Simulations/_Output/GPP/",
+	pattern = "GPP", full.names = T
+)
+
+# plot
+speedup_plot(stan_files)
+```
+
+# Conclusion
+
+We have shown that practically meaningful speedups of inference in Stan can be achieved by paralellizing certain computational building blocks that are computational bottlenecks.
+
+Main directions for future work include (a) removing unnecessary data transfers to and from the GPU, which should improve GPU performance, especially for smaller input size problems, but would require more fundamental changes to the Stan \texttt{math} library, (b) providing a R interface to \texttt{cmdstan} or access to GPU parallelized computation through \texttt{rstan}, and (c) adding GPU-parallel implementations for other computational building blocks (other matrix methods, density calculation, and generating random variates).
+
+\newpage
+# Appendix
+
+## Stan model for Gaussian process regression
+
+```
+functions {
+  vector gp_pred_rng(real[] x2,
+                     vector y1, real[] x1,
+                     real alpha, real rho, real sigma, real delta) {
+    int N1 = rows(y1);
+    int N2 = size(x2);
+    vector[N2] f2;
+    {
+      matrix[N1, N1] K =   cov_exp_quad(x1, alpha, rho)
+                         + diag_matrix(rep_vector(square(sigma), N1));
+      matrix[N1, N1] L_K = cholesky_decompose(K);
+
+      vector[N1] L_K_div_y1 = mdivide_left_tri_low(L_K, y1);
+      vector[N1] K_div_y1 = mdivide_right_tri_low(L_K_div_y1', L_K)';
+      matrix[N1, N2] k_x1_x2 = cov_exp_quad(x1, x2, alpha, rho);
+      vector[N2] f2_mu = (k_x1_x2' * K_div_y1);
+      matrix[N1, N2] v_pred = mdivide_left_tri_low(L_K, k_x1_x2);
+      matrix[N2, N2] cov_f2 =   cov_exp_quad(x2, alpha, rho) - v_pred' * v_pred
+                              + diag_matrix(rep_vector(delta, N2));
+      f2 = multi_normal_rng(f2_mu, cov_f2);
+    }
+    return f2;
+  }
+}
+
+data {
+  int<lower=1> N;
+  real x[N];
+  vector[N] y;
+
+  int<lower=1> N_predict;
+  real x_predict[N_predict];
+}
+
+parameters {
+  real<lower=0> rho;
+  real<lower=0> alpha;
+  real<lower=0> sigma;
+}
+
+model {
+  matrix[N, N] cov =   cov_exp_quad(x, alpha, rho)
+                     + diag_matrix(rep_vector(square(sigma), N));
+  matrix[N, N] L_cov = cholesky_decompose(cov);
+
+  // P[rho < 2.0] = 0.01
+  // P[rho > 10] = 0.01
+  rho ~ inv_gamma(8.91924, 34.5805);
+  alpha ~ normal(0, 2);
+  sigma ~ normal(0, 1);
+
+  y ~ multi_normal_cholesky(rep_vector(0, N), L_cov);
+}
+
+generated quantities {
+  vector[N_predict] f_predict = gp_pred_rng(x_predict, y, x, alpha, rho, sigma, 1e-10);
+  vector[N_predict] y_predict;
+  for (n in 1:N_predict)
+    y_predict[n] = normal_rng(f_predict[n], sigma);
+}
+
+```
+
+## Stan model for spatial Gaussian predictive process
+
+```
+data {
+  int<lower = 1> N;
+  int<lower = 1> p;
+  matrix[N, p] X;
+  int<lower = 0> y[N];
+  matrix[N, N] D;
+}
+
+parameters {
+  vector[N] z;
+  real<lower=0> eta;
+  real<lower=0> phi;
+  real<lower=0> sigma;
+  vector[p] beta;
+}
+
+transformed parameters {
+  cov_matrix[N] Sigma;
+  vector[N] w;
+  real<lower = 0> eta_sq;
+  real<lower = 0> sig_sq;
+  
+  eta_sq = pow(eta, 2);
+  sig_sq = pow(sigma, 2);
+  
+  for (i in 1:(N - 1)) {
+    for (j in (i + 1):N) {
+      Sigma[i, j] = eta_sq * exp(-D[i, j] * phi);
+      Sigma[j, i] = Sigma[i, j];
+    }
+  }
+
+  for (k in 1:N) Sigma[k, k] = eta_sq + sig_sq;
+  w = cholesky_decompose(Sigma) * z;
+}
+
+model {
+  eta ~ normal(0, 1);
+  sigma ~ normal(0, 1);
+  phi ~ normal(0, 5);
+  beta ~ normal(0, 1);
+  z ~ normal(0, 1);
+  y ~ poisson_log(X * beta + w);
+}
+```
+## Original Computing Environment
+
+```{r}
+sessionInfo()
+```
+
+\newpage
+# References
