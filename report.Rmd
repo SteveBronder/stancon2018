@@ -119,25 +119,25 @@ Where [what numbers are from [@Cesnovar2017]?] come from [@Cesnovar2017]. Some o
 
 ## Matrix multiplication
 
-The matrix multiplication implementation is based on the implementations in cuBLAS [@CUBLAS] and clBLAST [@clBLAST]. The only optimizations that are used is assigning additional work to threads in large matrix multiplications and the use of tiling in local memory. Both are widely known optimization techniques and are known to boost performance on all GPU architectures. We separately deal with matrix multiplication $A \times A^T$. In this case, we know that the resulting matrix is symmetric and can reduce the number of multiplications by half. 
+Our matrix multiplication implementation is based on routines in cuBLAS [@CUBLAS] and clBLAST [@clBLAST]. The matrix multiplication routines are optimized through two standard methods, assigning additional work to threads in large matrix multiplications and the use of tiling in local memory. In addition, optimizations for special cases are created such as $A \times A^T$, since the result is symmetric and the number of multiplications can be reduced by half. 
 
 ## Inverting a lower triangular matrix
 
-The mostly widely used CPU algorithms for inverting a lower triangular matrix are not suitable for many-core architectures such as a GPU. The solution proposed in [@Mahfoudhi2012] replaces most of the sequential code with matrix multiplications, which are more GPU-suitable operations.
+The mostly widely used CPU algorithms for inverting a lower triangular matrix are not suitable for many-core architectures such as a GPU. Figure \ref{fig:blockInverse} gives a graphical illustration of the solution proposed in [@Mahfoudhi2012], which replaces most of the sequential code with matrix multiplications and is more suited for many-core systems.
 
-The basic idea is to split the input matrix in blocks as shown in Figure \ref{fig:blockInverse}. We first calculate the matrix inversion of the smaller matrices $A1$ and $A2$. These inverses are done using the basic sequential algorithms, with small amounts of parallelism. The final step is the calculation of $C3 = -C2 \times A3 \times C1$. In order to fully utilize the GPU, the number of blocks in the first step should be larger power of 2. The exact number of blocks depends on the input matrix size and the GPU used. 
+The input matrix is split into blocks as shown in Figure \ref{fig:blockInverse}. The first step is to calculate the matrix inversion of the smaller matrices $A1$ and $A2$. These inverses are done using the basic sequential algorithms, with small amounts of parallelism. The final step is the calculation of $C3 = -C2 \times A3 \times C1$. The optimal number of blocks depends on the input matrix size and the GPU used\footnote{Generally thread blocks and warps will grouped in powers of two so the optimal block size is recommended to be a power of two such as 32x32}. 
 
 ![\label{fig:blockInverse}Blocked version of the lower triangualar matrix inverse.](_Figures/blockInverse.pdf)
 
 ## Cholesky decompostion
 
-Our GPU implementation for the Cholesky decompostion is based on the blocked algorithm, proposed in [@LouterNool1992]. Similar to the implementation of the lower triangular matrix inverse, we first split the input matrix into blocks, as shown in Figure \ref{fig:blockCholesky}. We then calculate the Cholesky decomposition of $A_{11}$ with a basic algorithm with less parallelism. We also calculate the inverse of $L_{11}^T$. $L_{21}$ and $L_{22}$ are calculated as follows:
+The GPU implementation of the Cholesky decompostion is based on the blocked algorithm proposed in [@LouterNool1992]. Similar to the implementation of the lower triangular matrix inverse, the input matrix is split into blocks, as shown in Figure \ref{fig:blockCholesky}. An basic algorithm is first used to calculate the cholesky decomposition of $A_{11}$ and then the inverse of $L_{11}^T$. $L_{21}$ and $L_{22}$ are calculated as follows:
 
 $$L_{21} = A_{21} (L_{11}^T)^{(-1)}$$
 
 $$L_{22} = A_{22} - L_{21} (L_{21})^T$$
 
-Matrix multiplications are implemented as discussed in the previous subsection. For larger matrices $(n > 1000)$, the algorithm is executed in 2 levels. For example, when $n = 2000$, the size of the block $A_{11}$ is $m = 400$. Using the basic sequential algorithm for such a large $m$ would be slow, so we apply the initial algorithm to $A_{11}$, as if its the input matrix, with $m = 100$.
+For larger matrices $(n > 1000)$, the algorithm is executed in 2 levels. For example, when $n = 2000$, the size of the block $A_{11}$ is $m = 400$. Because the sequential algorithm would be slow for a large $A_{11}$ block, the routine is run recursively on $A_{11}$ until $m$ reaches a reasonable size. 
 
 ![\label{fig:blockCholesky}Blocked version of the Cholesky decomposition.](_Figures/blockCholesky.pdf)
 
@@ -146,9 +146,9 @@ The implementation of the derivative of the Cholesky decomposition is based on t
 
 # Example 1: Gaussian process regression
 
-The models that would benefit the most from the currently parallelized computational building blocks are models large covariance matrices. A good example of such a model are Gaussian processes (GP). We used 1D GP regression with hyperpriors example from the case study [@Betancourt2017] (see appendix).
+Models that use large covariance matrices will tend to benefit the most from the cholesky GPU routines. The example below uses 1D GP regression with hyperpriors as exampled in the case study [@Betancourt2017] (see appendix).
 
-We generated a toy dataset based on a simple functional relationship between $x$ and $y$ with added Gaussian noise:
+This example uses a toy dataset based on a simple functional relationship between $x$ and $y$ with added Gaussian noise:
 
 $$x_i \sim_{\text{iid}} U(-10,10)$$
 $$y_i | x_i \sim_{\text{iid}} N \left( f(x), \frac{1}{10} \right), i = 1..n,$$
@@ -195,7 +195,7 @@ ggplot() +
 
 ```
 
-We measured the computation times of the CPU and GPU implementations of our model in Stan for different input sizes. The measurements include sampling and warmup iterations, but not model compilation time. The experiments were executed on a desktop computer with a Intel Xeon CPU running at $2.3 GHz$ and a NVIDIA GTX1070 GPU. Results are shown in Figure \ref{fig:GP_results}. Due to unnecessary data transfers, the GPU implementation is not faster than the CPU version for smaller input sizes ($n < 600$). For larger $n$, the data transfer become negligible and we can observe a speedup of $~13$ for $n = 3000$. Speedup measurements for larger $n$ were infeasible due to large CPU computation times, however, as the speedups do not yet taper off, we expect that the maximum speedup is even larger than $13$.
+The model is executed and timing results are storedfor multiple input sizes over the GPU and CPU implementation. The measurements include sampling and warmup iterations, but not model compilation time\footnote{The experiments were executed on a desktop computer with a Intel Xeon CPU running at $2.3 GHz$ and a NVIDIA GTX1070 GPU}. Results are shown in Figure \ref{fig:GP_results}. Due to unnecessary data transfers, the GPU implementation is not faster than the CPU version for smaller input sizes ($n < 600$). For larger $n$, the data transfer become negligible and we can observe a speedup of $~13$ for $n = 3000$. Speedup measurements for larger $n$ were infeasible due to large CPU computation times. 
 
 ```{r echo = FALSE, fig.cap="\\label{fig:GP_results}Visualizations of speedup when using our GPU approach compared to default CPU implementation."}
 
@@ -207,6 +207,27 @@ stan_files <- list.files(
 
 # plot
 speedup_plot(stan_files)
+```
+
+TODO: Make this better. Taking the simulation results and predicting the times yields the following:
+
+```{r echo = FALSE, warning=FALSE, message=FALSE}
+stan_summary <- NULL
+
+for (fn in stan_files) {
+	summary <- readRDS(fn)
+	stan_summary <- rbind(stan_summary, data.frame(N = summary$N,
+																								 time = summary$time,
+																								 GPU = summary$GPU))
+}
+
+stan_summary$GPU = as.integer(stan_summary$GPU)
+time_pred = lm(time ~ GPU * N, data = stan_summary)
+new_dat = expand.grid(N = c(150, 200, 250), GPU = c(0,1))
+new_dat$preds = predict(time_pred, newdata = new_dat)
+new_dat = cast(new_dat, N ~ GPU)
+colnames(new_dat) = c("N", "CPU", "GPU")
+knitr::kable(new_dat)
 ```
 
 # Example 2: Spatial Gaussian predictive process
