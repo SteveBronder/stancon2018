@@ -123,7 +123,7 @@ Our matrix multiplication implementation is based on routines in cuBLAS [@CUBLAS
 
 ## Inverting a lower triangular matrix
 
-The mostly widely used CPU algorithms for inverting a lower triangular matrix are not suitable for many-core architectures such as a GPU. Figure \ref{fig:blockInverse} gives a graphical illustration of the solution proposed in [@Mahfoudhi2012], which replaces most of the sequential code with matrix multiplications and is more suited for many-core systems.
+The mostly widely used CPU algorithms for inverting a lower triangular matrix are not suitable for many-core architectures. Figure \ref{fig:blockInverse} gives a graphical illustration of the solution proposed in [@Mahfoudhi2012] which replaces most of the sequential code with matrix multiplications and is more suited for many-core systems.
 
 The input matrix is split into blocks as shown in Figure \ref{fig:blockInverse}. The first step is to calculate the matrix inversion of the smaller matrices $A1$ and $A2$. These inverses are done using the basic sequential algorithms, with small amounts of parallelism. The final step is the calculation of $C3 = -C2 \times A3 \times C1$. The optimal number of blocks depends on the input matrix size and the GPU used\footnote{Generally thread blocks and warps will grouped in powers of two so the optimal block size is recommended to be a power of two such as 32x32}. 
 
@@ -195,7 +195,7 @@ ggplot() +
 
 ```
 
-The model is executed and timing results are storedfor multiple input sizes over the GPU and CPU implementation. The measurements include sampling and warmup iterations, but not model compilation time\footnote{The experiments were executed on a desktop computer with a Intel Xeon CPU running at $2.3 GHz$ and a NVIDIA GTX1070 GPU}. Results are shown in Figure \ref{fig:GP_results}. Due to unnecessary data transfers, the GPU implementation is not faster than the CPU version for smaller input sizes ($n < 600$). For larger $n$, the data transfer become negligible and we can observe a speedup of $~13$ for $n = 3000$. Speedup measurements for larger $n$ were infeasible due to large CPU computation times. 
+The model is executed and timing results are stored for multiple input sizes over the GPU and CPU implementation. The measurements include sampling and warmup iterations, but not model compilation time\footnote{The experiments were executed on a desktop computer with a Intel Xeon CPU running at $2.3 GHz$ and a NVIDIA GTX1070 GPU}. Results are shown in Figure \ref{fig:GP_results}. Due to unnecessary data transfers, the GPU implementation is not faster than the CPU version for smaller input sizes ($n < 600$). For larger $n$, the data transfer become negligible and we can observe a speedup of $~13$ for $n = 3000$. Speedup measurements for larger $n$ were infeasible due to large CPU computation times. 
 
 ```{r echo = FALSE, fig.cap="\\label{fig:GP_results}Visualizations of speedup when using our GPU approach compared to default CPU implementation."}
 
@@ -294,9 +294,7 @@ speedup_plot(stan_files)
 
 # Conclusion
 
-We have shown that practically meaningful speedups of inference in Stan can be achieved by paralellizing certain computational building blocks that are computational bottlenecks.
-
-Main directions for future work include (a) removing unnecessary data transfers to and from the GPU, which should improve GPU performance, especially for smaller input size problems, but would require more fundamental changes to the Stan \texttt{math} library, (b) providing a R interface to \texttt{cmdstan} or access to GPU parallelized computation through \texttt{rstan}, and (c) adding GPU-parallel implementations for other computational building blocks (other matrix methods, density calculation, and generating random variates).
+This project shows that stan can utilize GPU routines to give meaningful and practical speedups. By parallelizing the cholesky and it's derivative 13 fold speedups or more are possible programs which depend on large covariance matrices. As this project continues, future areas of reasearch include (a) removing unnecessary data transfers to and from the GPU, which is currently our largest bottleneck, (b) allowing \texttt{rstan} [@rstan2018] to access the GPU methods, and (c) adding GPU-parallel implementations for other computational building blocks such as other matrix methods, density calculations, and generating random variates.
 
 \newpage
 # Appendix
