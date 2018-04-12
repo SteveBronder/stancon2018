@@ -1,5 +1,5 @@
 ---
-title: "GPU-optimized math routines in Stan"
+title: "GPU Optimized Math Routines in the Stan Math Library"
 author: |
   | Rok Češnovar, Davor Sluga, Jure Demšar, Steve Bronder, Erik Štrumbelj
 date: "Apr 15, 2018"
@@ -14,7 +14,7 @@ bibliography: report.bib
 
 # wd
 #setwd("D:/Projects/Stan/StanCon2018")
-setwd("d:/work/bitbucket/l1-7542_stan/StanCon2018/")
+#setwd("d:/work/bitbucket/l1-7542_stan/StanCon2018/")
 
 
 # includes
@@ -95,29 +95,31 @@ source("./_Simulations/GPP_data_generator.R")
 
 # Introduction
 
-???
+The Stan Math library's Hamilton Monte Carlo (HMC) sampler has computationally expensive draws while usually searching the target distribution more effectivly than alternative MCMC methods with less iterations. The bottleneck within draws makes Stan a prime candidate for GPU optimizations within samples. This project implements GPU optimizations for the cholesky decompostion and it's derivative in the Stan Math library [@stanmath2015]. Several modeling languages exist which implement MCMC sampling using GPUs, however this is the first known open source implementation of the cholesky decomposition with a GPU in a HMC setting. Furthermore, the GPU kernels are written in OpenCL which allows the methods to be implemented across any type of GPU. While results show that GPU optimizations are not optimal for small $N\times M$ matrices, large matrices can see speedups of 13 fold while retaining the same precision as models run purely on a CPU. 
 
 # GPU implementation
 
+<!--
 Currently, we aim at speeding up the biggest computational bottlenecks on the GPU, while the remaining (non-parallelized) Stan code is executed on the CPU. Therefore, we move the data to and from the GPU for each GPU-parallelized function. Removing this often unnecessary data transfer to and from the GPU is one of the main priorities of  future work.
+-->
+The largest linear algebra bottlenecks in stan tends to come from the cholesky decomposition, it's derivative, and the derivative of solving $Ax = B$. In order to reduce these bottlenecks, the GPU methods implemented in the Stan Math library include:
 
-The biggest bottlenecks identified and parallelized so far are the Cholesky decomposition, its derivative and the derivative of solving $Ax = B$, where A is a lower triangular matrix. In order to implement all three bottlenecks on the GPU, the following GPU functions were implemented (some are extensions of our previous work in [@Cesnovar2017]): 
+\begin{enumerate}
+\item	Matrix transpose
+\item	Multiplication of matrices with a diagonal and scalar
+\item	Subtraction of matrices
+\item	Copying submatrices
+\item	Matrix multiplication
+\item	Lower triangular matrix inverse
+\item	Cholesky decomposition
+\item First derivative of Cholesky Decomposition
+\end{enumerate}
 
-\begin{itemize}
-\item	matrix transpose,
-\item	multiplication of a matrix or its diagonal with a scalar,
-\item	subtraction of matrices,
-\item	copying submatrices,
-\item	matrix multiplication,
-\item	lower triangular matrix inverse, and
-\item	Cholesky decomposition.
-\end{itemize}
-
-Our focus was on the latter three computational building blocks, the rest either have trivial parallelizations for GPU architectures. For instance, in multiplication of a $m \times n$ matrix with a scalar, we create $m \times n$ threads, where each thread is assigned a single multiplication. No further optimizations were done for these functions. 
+Where [what numbers are from [@Cesnovar2017]?] come from [@Cesnovar2017]. Some of the optimizations used here are simple on a GPU. For instance, in multiplication of a $m \times n$ matrix with a scalar, we create $m \times n$ threads, where each thread is assigned a single multiplication. In the next section we will cover how the methods in (6-8) utilize the methods of (1-5).
 
 ## Matrix multiplication
 
-Our matrix multiplication implementation is based on implementations in cuBLAS [@CUBLAS] and clBLAST [@clBLAST]. The only optimizations that are used is assigning additional work to threads in large matrix multiplications and the use of tiling in local memory. Both are widely known optimization techniques and are known to boost performance on all GPU architectures. We separately deal with matrix multiplication $A \times A^T$. In this case, we know that the resulting matrix is symmetric and can reduce the number of multiplications by half. 
+The matrix multiplication implementation is based on the implementations in cuBLAS [@CUBLAS] and clBLAST [@clBLAST]. The only optimizations that are used is assigning additional work to threads in large matrix multiplications and the use of tiling in local memory. Both are widely known optimization techniques and are known to boost performance on all GPU architectures. We separately deal with matrix multiplication $A \times A^T$. In this case, we know that the resulting matrix is symmetric and can reduce the number of multiplications by half. 
 
 ## Inverting a lower triangular matrix
 
