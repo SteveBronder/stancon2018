@@ -57,8 +57,11 @@ speedup_plot <- function(stan_files) {
 										 high_time = quantile(time, 0.975, na.rm = TRUE))
 	
 	# plot ----
-	left_plot <- ggplot(data = stan_mean, aes(x = N, y = time_mean, group = GPU, colour = GPU)) +
-		geom_point(data = stan_summary, aes(x = N, y = time, colour = GPU), size = 4, alpha = 0.3, shape = 16) +
+	left_plot <- ggplot(data = stan_mean,
+	                    aes(x = N, y = time_mean, group = GPU, colour = GPU)) +
+	  geom_point(data = stan_summary,
+	             aes(x = N, y = time, colour = GPU),
+	             size = 4, alpha = 0.3, shape = 16) +
 		geom_line(size = 1) +
 		ylab("Time [s]") +
 		xlab("N") +
@@ -67,8 +70,10 @@ speedup_plot <- function(stan_files) {
 		scale_colour_manual(values = c("#fc8d59", "#91bfdb"), labels = c("CPU", "GPU"))
 	
 	
-	right_plot <- ggplot(data = stan_mean_log, aes(x = N, y = time_mean, group = GPU, colour = GPU)) +
-		geom_point(data = stan_summary_log, aes(x = N, y = time, colour = GPU), size = 4, alpha = 0.3, shape = 16) +
+	right_plot <- ggplot(data = stan_mean_log, 
+	                     aes(x = N, y = time_mean, group = GPU, colour = GPU)) +
+		geom_point(data = stan_summary_log, aes(x = N, y = time, colour = GPU),
+		           size = 4, alpha = 0.3, shape = 16) +
 		geom_line(size = 1) +
 		ylab(expression(log[10](time)~"[s]")) +
 		xlab(expression(log[10](N))) +
@@ -117,6 +122,8 @@ The largest linear algebra bottlenecks in stan tends to come from the cholesky d
 
 Where [what numbers are from [@Cesnovar2017]?] come from [@Cesnovar2017]. Some of the optimizations used here are simple on a GPU. For instance, in multiplication of a $m \times n$ matrix with a scalar, we create $m \times n$ threads, where each thread is assigned a single multiplication. In the next section we will cover how the methods in (6-8) utilize the methods of (1-5).
 
+The OpenCL [@StoneOpenCL2010] context which manages the devices, platforms, memory, and kernels is built into stan using the \texttt{C++11} Meyer's singleton pattern called \texttt{opencl\_context\_base::getInstance()}. Developers are able to access the context through an friend adapter class called \texttt{opencl\_context} which provides a simple wrapper for accessing the base context.
+
 ## Matrix multiplication
 
 Our matrix multiplication implementation is based on routines in cuBLAS [@CUBLAS] and clBLAST [@clBLAST]. The matrix multiplication routines are optimized through two standard methods, assigning additional work to threads in large matrix multiplications and the use of tiling in local memory. In addition, optimizations for special cases are created such as $A \times A^T$, since the result is symmetric and the number of multiplications can be reduced by half. 
@@ -142,6 +149,8 @@ For larger matrices $(n > 1000)$, the algorithm is executed in 2 levels. For exa
 ![\label{fig:blockCholesky}Blocked version of the Cholesky decomposition.](_Figures/blockCholesky.pdf)
 
 The implementation of the derivative of the Cholesky decomposition is based on the blocked version presented in [@Murray2016]. This algorithm is cache friendly and uses GPU-suitable matrix operations. Similar to the inversion and cholesky decomposition, the input matrix is split into smaller blocks on which we then perform various already discussed matrix operations: transpose, multiplication, lower triangular matrix inversion and subtraction. For details on the algorithm, refer to [@Murray2016].
+
+Users can access the Cholesky GPU routines by calling \texttt{cholesky\_decompose\_gpu()} in the stan language. In the future all GPU methods will be implimented in the same way so that users can make their code access the GPU routines through calling \texttt{<func\_name>\_gpu()}.
 
 
 # Example 1: Gaussian process regression
@@ -209,7 +218,8 @@ stan_files <- list.files(
 speedup_plot(stan_files)
 ```
 
-TODO: Make this better. Taking the simulation results and predicting the times yields the following:
+To estimate the timing of the GPU vs. CPU routines we build a small linear regression on the simulations of the form $time \sim D_{GPU} \times N_{sims} + N_{sims} + \epsilon$ and predict the GPU and CPU times for $N = \{150, 200, 250\}$.
+
 
 ```{r echo = FALSE, warning=FALSE, message=FALSE}
 stan_summary <- NULL
@@ -222,13 +232,33 @@ for (fn in stan_files) {
 }
 
 stan_summary$GPU = as.integer(stan_summary$GPU)
-time_pred = lm(time ~ GPU * N, data = stan_summary)
+time_pred = lm(time ~ GPU:N + N + 0, data = stan_summary)
 new_dat = expand.grid(N = c(150, 200, 250), GPU = c(0,1))
 new_dat$preds = predict(time_pred, newdata = new_dat)
 new_dat = cast(new_dat, N ~ GPU)
 colnames(new_dat) = c("N", "CPU", "GPU")
-knitr::kable(new_dat)
+#knitr::kable(new_dat, format = "latex", digits = 2,
+#             caption = "The predictions for CPU vs. GPU times for larger N")
 ```
+
+
+\begin{table}[!htbp]
+\caption{\label{tab:}The predictions for CPU vs. GPU times for larger N}
+\centering
+\begin{tabular}[t]{r|r|r}
+\hline
+N & CPU & GPU\\
+\hline
+150 & 23.65 & 6.34\\
+\hline
+200 & 31.54 & 8.45\\
+\hline
+250 & 39.42 & 10.57\\
+\hline
+\end{tabular}
+\end{table}
+
+Futher tests are necessary, but basic intuition and the back of a napkin regression implies that this method will continue 
 
 # Example 2: Spatial Gaussian predictive process
 
