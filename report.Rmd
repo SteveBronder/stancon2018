@@ -324,7 +324,7 @@ speedup_plot(stan_files)
 
 # Conclusion
 
-This project shows that stan can utilize GPU routines to give meaningful and practical speedups. By parallelizing the cholesky and it's derivative 13 fold speedups or more are possible programs which depend on large covariance matrices. As this project continues, future areas of reasearch include (a) removing unnecessary data transfers to and from the GPU, which is currently our largest bottleneck, (b) allowing \texttt{rstan} [@rstan2018] to access the GPU methods, and (c) adding GPU-parallel implementations for other computational building blocks such as other matrix methods, density calculations, and generating random variates.
+This project shows the GPU routines in stan can give both practical and powerful speedups. Parallelizing the cholesky and it's derivative can give 13 fold speedups or more for programs which depend on large covariance matrices. As this project continues, future areas of reasearch include (a) removing unnecessary data transfers to and from the GPU, which is currently our largest bottleneck, (b) allowing \texttt{rstan} [@rstan2018] to access the GPU methods, and (c) adding GPU-parallel implementations for other computational building blocks such as other matrix methods, density calculations, and generating random variates.
 
 \newpage
 # Appendix
