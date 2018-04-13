@@ -1,21 +1,17 @@
 ---
-title: "GPU-optimized math routines in Stan"
+title: "GPU Optimized Math Routines in the Stan Math Library"
 author: |
-  | Rok ÄŒeÅ¡novar, Davor Sluga, Jure DemÅ¡ar, Steve Bronder, Erik Å trumbelj
-date: "Apr 15, 2018"
+  | Rok Cešnovar, Davor Sluga, Jure Demšar, Steve Bronder, Erik Štrumbelj
+date: "Apr 16, 2018"
 output: pdf_document
 bibliography: report.bib
 ---
 
+
 ```{r include = FALSE}
-# helper function for plotting
-
-#  | Faculty of Information and Computer Science, University of Ljubljana
-
 # wd
-#setwd("D:/Projects/Stan/StanCon2018")
-setwd("d:/work/bitbucket/l1-7542_stan/StanCon2018/")
-
+setwd("D:/Projects/StanCon2018")
+#setwd("d:/work/bitbucket/l1-7542_stan/StanCon2018/")
 
 # includes
 library(ggplot2)
@@ -24,6 +20,7 @@ library(rstan)
 library(cowplot)
 library(reshape)
 
+# helper function for plotting
 speedup_plot <- function(stan_files) {
 	# load data ----
 	stan_summary <- NULL
@@ -57,8 +54,11 @@ speedup_plot <- function(stan_files) {
 										 high_time = quantile(time, 0.975, na.rm = TRUE))
 	
 	# plot ----
-	left_plot <- ggplot(data = stan_mean, aes(x = N, y = time_mean, group = GPU, colour = GPU)) +
-		geom_point(data = stan_summary, aes(x = N, y = time, colour = GPU), size = 4, alpha = 0.3, shape = 16) +
+	left_plot <- ggplot(data = stan_mean,
+	                    aes(x = N, y = time_mean, group = GPU, colour = GPU)) +
+	  geom_point(data = stan_summary,
+	             aes(x = N, y = time, colour = GPU),
+	             size = 4, alpha = 0.3, shape = 16) +
 		geom_line(size = 1) +
 		ylab("Time [s]") +
 		xlab("N") +
@@ -67,8 +67,10 @@ speedup_plot <- function(stan_files) {
 		scale_colour_manual(values = c("#fc8d59", "#91bfdb"), labels = c("CPU", "GPU"))
 	
 	
-	right_plot <- ggplot(data = stan_mean_log, aes(x = N, y = time_mean, group = GPU, colour = GPU)) +
-		geom_point(data = stan_summary_log, aes(x = N, y = time, colour = GPU), size = 4, alpha = 0.3, shape = 16) +
+	right_plot <- ggplot(data = stan_mean_log, 
+	                     aes(x = N, y = time_mean, group = GPU, colour = GPU)) +
+		geom_point(data = stan_summary_log, aes(x = N, y = time, colour = GPU),
+		           size = 4, alpha = 0.3, shape = 16) +
 		geom_line(size = 1) +
 		ylab(expression(log[10](time)~"[s]")) +
 		xlab(expression(log[10](N))) +
@@ -81,7 +83,7 @@ speedup_plot <- function(stan_files) {
 
 # scripts for data generation
 source("./_Simulations/GP_data_generator.R")
-source("./_Simulations/GPP_data_generator.R")
+source("./_Simulations/SGP_data_generator.R")
 
 # RERUN SIMULATIONS?
 # !!! WARNING: UNCOMMENTING THE TWO LINES BELOW RERUNS ALL SIMULATIONS
@@ -89,64 +91,70 @@ source("./_Simulations/GPP_data_generator.R")
 # !!! YOU ALSO NEED TO SET FOLDERS FOR cmdstan and gpustan
 
 # source("./_Simulations/GP.R")
-# source("./_Simulations/GPP.R")
+# source("./_Simulations/SGP.R")
 
 ```
 
 # Introduction
 
-???
+The Stan Math library's Hamilton Monte Carlo (HMC) sampler has computationally expensive draws while usually searching the target distribution more effectivly than alternative MCMC methods with less iterations. The bottleneck within draws makes Stan a prime candidate for GPU optimizations within samples. This project implements GPU optimizations for the cholesky decompostion and it's derivative in the Stan Math library [@stanmath2015]. Several modeling languages exist which implement MCMC sampling using GPUs, however this is the first known open source implementation of the cholesky decomposition with a GPU in a HMC setting. Furthermore, the GPU kernels are written in OpenCL which allows the methods to be implemented across any type of GPU. While results show that GPU optimizations are not optimal for small $N\times M$ matrices, large matrices can see speedups of 13 fold while retaining the same precision as models run purely on a CPU. 
 
 # GPU implementation
 
+<!--
 Currently, we aim at speeding up the biggest computational bottlenecks on the GPU, while the remaining (non-parallelized) Stan code is executed on the CPU. Therefore, we move the data to and from the GPU for each GPU-parallelized function. Removing this often unnecessary data transfer to and from the GPU is one of the main priorities of  future work.
+-->
+The largest linear algebra bottlenecks in stan tends to come from the cholesky decomposition, it's derivative, and the derivative of solving $Ax = B$. In order to reduce these bottlenecks, the GPU methods implemented in the Stan Math library include:
 
-The biggest bottlenecks identified and parallelized so far are the Cholesky decomposition, its derivative and the derivative of solving $Ax = B$, where A is a lower triangular matrix. In order to implement all three bottlenecks on the GPU, the following GPU functions were implemented (some are extensions of our previous work in [@Cesnovar2017]): 
+\begin{enumerate}
+\item	Matrix transpose
+\item	Multiplication of matrices with a diagonal and scalar
+\item	Subtraction of matrices
+\item	Copying submatrices
+\item	Matrix multiplication
+\item	Lower triangular matrix inverse
+\item	Cholesky decomposition
+\item First derivative of Cholesky Decomposition
+\end{enumerate}
 
-\begin{itemize}
-\item	matrix transpose,
-\item	multiplication of a matrix or its diagonal with a scalar,
-\item	subtraction of matrices,
-\item	copying submatrices,
-\item	matrix multiplication,
-\item	lower triangular matrix inverse, and
-\item	Cholesky decomposition.
-\end{itemize}
+Where [what numbers are from [@Cesnovar2017]?] come from [@Cesnovar2017]. Some of the optimizations used here are simple on a GPU. For instance, in multiplication of a $m \times n$ matrix with a scalar, we create $m \times n$ threads, where each thread is assigned a single multiplication. In the next section we will cover how the methods in (6-8) utilize the methods of (1-5).
 
-Our focus was on the latter three computational building blocks, the rest either have trivial parallelizations for GPU architectures. For instance, in multiplication of a $m \times n$ matrix with a scalar, we create $m \times n$ threads, where each thread is assigned a single multiplication. No further optimizations were done for these functions. 
+The OpenCL [@StoneOpenCL2010] context which manages the devices, platforms, memory, and kernels is built into stan using the \texttt{C++11} Meyer's singleton pattern called \texttt{opencl\_context\_base::getInstance()}. Developers are able to access the context through an friend adapter class called \texttt{opencl\_context} which provides a simple wrapper for accessing the base context.
 
 ## Matrix multiplication
 
-Our matrix multiplication implementation is based on implementations in cuBLAS [@CUBLAS] and clBLAST [@clBLAST]. The only optimizations that are used is assigning additional work to threads in large matrix multiplications and the use of tiling in local memory. Both are widely known optimization techniques and are known to boost performance on all GPU architectures. We separately deal with matrix multiplication $A \times A^T$. In this case, we know that the resulting matrix is symmetric and can reduce the number of multiplications by half. 
+Our matrix multiplication implementation is based on routines in cuBLAS [@CUBLAS] and clBLAST [@clBLAST]. The matrix multiplication routines are optimized through two standard methods, assigning additional work to threads in large matrix multiplications and the use of tiling in local memory. In addition, optimizations for special cases are created such as $A \times A^T$, since the result is symmetric and the number of multiplications can be reduced by half. 
 
 ## Inverting a lower triangular matrix
 
-The mostly widely used CPU algorithms for inverting a lower triangular matrix are not suitable for many-core architectures such as a GPU. The solution proposed in [@Mahfoudhi2012] replaces most of the sequential code with matrix multiplications, which are more GPU-suitable operations.
+The mostly widely used CPU algorithms for inverting a lower triangular matrix are not suitable for many-core architectures. Figure \ref{fig:blockInverse} gives a graphical illustration of the solution proposed in [@Mahfoudhi2012] which replaces most of the sequential code with matrix multiplications and is more suited for many-core systems.
 
-The basic idea is to split the input matrix in blocks as shown in Figure \ref{fig:blockInverse}. We first calculate the matrix inversion of the smaller matrices $A1$ and $A2$. These inverses are done using the basic sequential algorithms, with small amounts of parallelism. The final step is the calculation of $C3 = -C2 \times A3 \times C1$. In order to fully utilize the GPU, the number of blocks in the first step should be larger power of 2. The exact number of blocks depends on the input matrix size and the GPU used. 
+The input matrix is split into blocks as shown in Figure \ref{fig:blockInverse}. The first step is to calculate the matrix inversion of the smaller matrices $A1$ and $A2$. These inverses are done using the basic sequential algorithms, with small amounts of parallelism. The final step is the calculation of $C3 = -C2 \times A3 \times C1$. The optimal number of blocks depends on the input matrix size and the GPU used\footnote{Generally thread blocks and warps will grouped in powers of two so the optimal block size is recommended to be a power of two such as 32x32}. 
 
 ![\label{fig:blockInverse}Blocked version of the lower triangualar matrix inverse.](_Figures/blockInverse.pdf)
 
 ## Cholesky decompostion
 
-Our GPU implementation for the Cholesky decompostion is based on the blocked algorithm, proposed in [@LouterNool1992]. Similar to the implementation of the lower triangular matrix inverse, we first split the input matrix into blocks, as shown in Figure \ref{fig:blockCholesky}. We then calculate the Cholesky decomposition of $A_{11}$ with a basic algorithm with less parallelism. We also calculate the inverse of $L_{11}^T$. $L_{21}$ and $L_{22}$ are calculated as follows:
+The GPU implementation of the Cholesky decompostion is based on the blocked algorithm proposed in [@LouterNool1992]. Similar to the implementation of the lower triangular matrix inverse, the input matrix is split into blocks, as shown in Figure \ref{fig:blockCholesky}. An basic algorithm is first used to calculate the cholesky decomposition of $A_{11}$ and then the inverse of $L_{11}^T$. $L_{21}$ and $L_{22}$ are calculated as follows:
 
 $$L_{21} = A_{21} (L_{11}^T)^{(-1)}$$
 
 $$L_{22} = A_{22} - L_{21} (L_{21})^T$$
 
-Matrix multiplications are implemented as discussed in the previous subsection. For larger matrices $(n > 1000)$, the algorithm is executed in 2 levels. For example, when $n = 2000$, the size of the block $A_{11}$ is $m = 400$. Using the basic sequential algorithm for such a large $m$ would be slow, so we apply the initial algorithm to $A_{11}$, as if its the input matrix, with $m = 100$.
+For larger matrices $(n > 1000)$, the algorithm is executed in 2 levels. For example, when $n = 2000$, the size of the block $A_{11}$ is $m = 400$. Because the sequential algorithm would be slow for a large $A_{11}$ block, the routine is run recursively on $A_{11}$ until $m$ reaches a reasonable size. 
 
 ![\label{fig:blockCholesky}Blocked version of the Cholesky decomposition.](_Figures/blockCholesky.pdf)
 
 The implementation of the derivative of the Cholesky decomposition is based on the blocked version presented in [@Murray2016]. This algorithm is cache friendly and uses GPU-suitable matrix operations. Similar to the inversion and cholesky decomposition, the input matrix is split into smaller blocks on which we then perform various already discussed matrix operations: transpose, multiplication, lower triangular matrix inversion and subtraction. For details on the algorithm, refer to [@Murray2016].
 
+Users can access the Cholesky GPU routines by calling \texttt{cholesky\_decompose\_gpu()} in the stan language. In the future all GPU methods will be implimented in the same way so that users can make their code access the GPU routines through calling \texttt{<func\_name>\_gpu()}.
+
 
 # Example 1: Gaussian process regression
 
-The models that would benefit the most from the currently parallelized computational building blocks are models large covariance matrices. A good example of such a model are Gaussian processes (GP). We used 1D GP regression with hyperpriors example from the case study [@Betancourt2017] (see appendix).
+Models that use large covariance matrices will tend to benefit the most from the cholesky GPU routines. The example below uses 1D GP regression with hyperpriors as exampled in the case study [@Betancourt2017] (see appendix).
 
-We generated a toy dataset based on a simple functional relationship between $x$ and $y$ with added Gaussian noise:
+This example uses a toy dataset based on a simple functional relationship between $x$ and $y$ with added Gaussian noise:
 
 $$x_i \sim_{\text{iid}} U(-10,10)$$
 $$y_i | x_i \sim_{\text{iid}} N \left( f(x), \frac{1}{10} \right), i = 1..n,$$
@@ -193,7 +201,7 @@ ggplot() +
 
 ```
 
-We measured the computation times of the CPU and GPU implementations of our model in Stan for different input sizes. The measurements include sampling and warmup iterations, but not model compilation time. The experiments were executed on a desktop computer with a Intel Xeon CPU running at $2.3 GHz$ and a NVIDIA GTX1070 GPU. Results are shown in Figure \ref{fig:GP_results}. Due to unnecessary data transfers, the GPU implementation is not faster than the CPU version for smaller input sizes ($n < 600$). For larger $n$, the data transfer become negligible and we can observe a speedup of $~13$ for $n = 3000$. Speedup measurements for larger $n$ were infeasible due to large CPU computation times, however, as the speedups do not yet taper off, we expect that the maximum speedup is even larger than $13$.
+The model is executed and timing results are stored for multiple input sizes over the GPU and CPU implementation. The measurements include sampling and warmup iterations, but not model compilation time\footnote{The experiments were executed on a desktop computer with a Intel Xeon CPU running at $2.3 GHz$ and a NVIDIA GTX1070 GPU}. Results are shown in Figure \ref{fig:GP_results}. Due to unnecessary data transfers, the GPU implementation is not faster than the CPU version for smaller input sizes ($n < 600$). For larger $n$, the data transfer become negligible and we can observe a speedup of $~13$ for $n = 3000$. Speedup measurements for larger $n$ were infeasible due to large CPU computation times. 
 
 ```{r echo = FALSE, fig.cap="\\label{fig:GP_results}Visualizations of speedup when using our GPU approach compared to default CPU implementation."}
 
@@ -207,18 +215,70 @@ stan_files <- list.files(
 speedup_plot(stan_files)
 ```
 
-# Example 2: Spatial Gaussian predictive process
+To estimate the timing of the GPU vs. CPU routines we build a small linear regression on the simulations of the form $time \sim D_{GPU} \times N_{sims} + N_{sims} + \epsilon$ and predict the GPU and CPU times for $N = \{150, 200, 250\}$.
 
-TODO: Description of the model.
 
-Figure \ref{fig:GPP_parameters} shows that there is no difference in fitter parameters between the GPU and CPU approaches.
+```{r echo = FALSE, warning=FALSE, message=FALSE}
+stan_summary <- NULL
 
-```{r echo = FALSE, fig.cap="\\label{fig:GPP_parameters}Comparison of calculated parameters between CPU and GPU."}
+for (fn in stan_files) {
+	summary <- readRDS(fn)
+	stan_summary <- rbind(stan_summary, data.frame(N = summary$N,
+																								 time = summary$time,
+																								 GPU = summary$GPU))
+}
+
+stan_summary$GPU = as.integer(stan_summary$GPU)
+time_pred = lm(time ~ GPU:N + N + 0, data = stan_summary)
+new_dat = expand.grid(N = c(150, 200, 250), GPU = c(0,1))
+new_dat$preds = predict(time_pred, newdata = new_dat)
+new_dat = cast(new_dat, N ~ GPU)
+colnames(new_dat) = c("N", "CPU", "GPU")
+#knitr::kable(new_dat, format = "latex", digits = 2,
+#             caption = "The predictions for CPU vs. GPU times for larger N")
+```
+
+
+\begin{table}[!htbp]
+\caption{\label{tab:}The predictions for CPU vs. GPU times for larger N}
+\centering
+\begin{tabular}[t]{r|r|r}
+\hline
+N & CPU & GPU\\
+\hline
+150 & 23.65 & 6.34\\
+\hline
+200 & 31.54 & 8.45\\
+\hline
+250 & 39.42 & 10.57\\
+\hline
+\end{tabular}
+\end{table}
+
+Futher tests are necessary, but basic intuition and the back of a napkin regression implies that this method will continue 
+
+# Example 2: Spatial Gaussian process
+
+Advances in Global Positioning System (GPS) and Geographical Information Systems (GIS) enable us to accurately determine positions of points where we collect scientific data. In turn, this spurned growth of statistical modelling of large spatial datasets in many different scientific fields. This example represents one such toy dataset. 
+
+The toy dataset and the Stan model are implementented the same way as in Max Jospeh's study [@Joseph2016]. The dataset mimics data collection at $n$ different spatial locations. Each spatial location has its coordinates drawn from $\mathcal{U}(0, 1)$. The data collected at a particular point depends on a mean zero Gaussian process with an isotropic stationary exponential covariance function:
+
+$$[C(d)]_{i, j} = \eta^2 \cdot \text{exp}(-d_{ij} \cdot \phi))$$
+
+$$w(s) \sim GP(0, C(d))$$
+
+$$y(s) \sim \text{Poisson}(\text{exp}(X^T(s) \cdot \beta + w(s) + \mathcal{N}(0, \sigma))),$$
+
+where $d_{ij}$ is the distance between locations $s_i$ and $s_j$, $\eta^2$ is the variance parameter of the Gaussian process, $\phi$ determines how quickly the correlation in $w$ decays as distance increases, $y(s)$ is data collected at the geospatial location $s$, $X$ is an $n \times p$ design matrix, $\beta$ is a length $p$ parameter vector, and $\sigma$ is a ``nugget'' parameter. We used the following parameter values in our simulations: $\eta = 0.8, \sigma = 0.3, \phi = 7, \beta = 2$. Stan model is attached in the appendix section.
+
+Figure \ref{fig:SGP_parameters} shows that there is no difference in fitted parameters between the GPU and CPU approaches.
+
+```{r echo = FALSE, fig.cap="\\label{fig:SGP_parameters}Comparison of calculated parameters between CPU and GPU."}
 
 # load  results ----
 stan_files <- list.files(
-	path = "./_Simulations/_Output/GPP/",
-	pattern = "GPP", full.names = T
+	path = "./_Simulations/_Output/SGP/",
+	pattern = "SGP", full.names = T
 )
 
 stan_summary <- NULL
@@ -253,16 +313,14 @@ ggplot(stan_melt, aes(x = GPU, y = value, fill = GPU)) +
   scale_fill_manual(values = c("#fc8d59", "#91bfdb"))
 ```
 
-TODO: Text.
+Results are shown in Figure \ref{fig:SGP_results}.
 
-Results are shown in Figure \ref{fig:GPP_results}.
-
-```{r echo = FALSE, fig.cap="\\label{fig:GPP_results}Visualizations of speedup when using our GPU approach compared to default CPU implementation."}
+```{r echo = FALSE, fig.cap="\\label{fig:SGP_results}Visualizations of speedup when using our GPU approach compared to default CPU implementation."}
 
 # load  results ----
 stan_files <- list.files(
-	path = "./_Simulations/_Output/GPP/",
-	pattern = "GPP", full.names = T
+	path = "./_Simulations/_Output/SGP/",
+	pattern = "SGP", full.names = T
 )
 
 # plot
@@ -271,9 +329,7 @@ speedup_plot(stan_files)
 
 # Conclusion
 
-We have shown that practically meaningful speedups of inference in Stan can be achieved by paralellizing certain computational building blocks that are computational bottlenecks.
-
-Main directions for future work include (a) removing unnecessary data transfers to and from the GPU, which should improve GPU performance, especially for smaller input size problems, but would require more fundamental changes to the Stan \texttt{math} library, (b) providing a R interface to \texttt{cmdstan} or access to GPU parallelized computation through \texttt{rstan}, and (c) adding GPU-parallel implementations for other computational building blocks (other matrix methods, density calculation, and generating random variates).
+This project shows the GPU routines in stan can give both practical and powerful speedups. Parallelizing the cholesky and it's derivative can give 13 fold speedups or more for programs which depend on large covariance matrices. As this project continues, future areas of reasearch include (a) removing unnecessary data transfers to and from the GPU, which is currently our largest bottleneck, (b) allowing \texttt{rstan} [@rstan2018] to access the GPU methods, and (c) adding GPU-parallel implementations for other computational building blocks such as other matrix methods, density calculations, and generating random variates.
 
 \newpage
 # Appendix
@@ -344,7 +400,7 @@ generated quantities {
 
 ```
 
-## Stan model for spatial Gaussian predictive process
+## Stan model for spatial Gaussian process
 
 ```
 data {
