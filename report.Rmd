@@ -117,13 +117,11 @@ The largest linear algebra bottlenecks in stan tends to come from the cholesky d
 \item First derivative of Cholesky Decomposition
 \end{enumerate}
 
-The execution times of methods (1-4) are negligible and thus our GPU implementations of these methods are simple and naive. For instance, in multiplication of a $m \times n$ matrix with a scalar, we create $m \times n$ threads, where each thread is assigned a single multiplication. 
+The execution times of methods (1-4) are negligible and thus our GPU implementations of these methods are simple and naive. For instance, in multiplication of a $m \times n$ matrix with a scalar, we create $m \times n$ threads, where each thread is assigned a single multiplication. These implementations are a necessity in order to implement methods (6-8) on the GPU.
 
 The implementation of matrix multiplication is based on routines in cuBLAS [@CUBLAS] and clBLAST [@clBLAST]. The matrix multiplication routines are optimized through two standard methods, assigning additional work to threads in large matrix multiplications and the use of tiling in local memory. In addition, optimizations for special cases are created such as $A \times A^T$, since the result is symmetric and the number of multiplications can be reduced by half. 
 
-In the next section we will cover how the methods in (6-8) utilize the methods of (1-5).
-
-The GPU implementations and optimizations of the lower triangular matrix inverse and the Cholesky decomposition are improvements of our previous work [@Cesnovar2017]. 
+The GPU implementations and optimizations of the lower triangular matrix inverse and the Cholesky decomposition are improvements on our previous work in [@Cesnovar2017]. These implementations are detailed in the next sections. The first derivative of the Cholesky decomposition is implemented using methods (1-7).
 
 The OpenCL [@StoneOpenCL2010] context which manages the devices, platforms, memory, and kernels is built into stan using the \texttt{C++11} Meyer's singleton pattern called \texttt{opencl\_context\_base::getInstance()}. Developers are able to access the context through an friend adapter class called \texttt{opencl\_context} which provides a simple wrapper for accessing the base context.
 
