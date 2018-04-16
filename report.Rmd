@@ -171,7 +171,7 @@ for (fn in stan_files) {
   summary <- readRDS(fn)
   
   # take one fit on largest N ----
-  if (summary$N == 100 && summary$iteration == 1)
+  if (summary$N == 1024 && summary$iteration == 1)
   {
 
     if (summary$GPU)
@@ -192,7 +192,7 @@ for (fn in stan_files) {
 df <- rbind(gpu_predict, cpu_predict)
 
 ggplot() +
-  geom_point(data = gpu_predict, aes(x = x, y = y), alpha = 0.3, shape = 16) +
+  geom_point(data = gpu_predict, aes(x = x, y = y), alpha = 0.1, shape = 16) +
   geom_line(data = df, aes(x = x_predict, y = y_predict, colour = GPU), size = 1) +
   theme_minimal() +
   theme(legend.position = "bottom", legend.title = element_blank()) +
