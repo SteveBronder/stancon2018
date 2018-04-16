@@ -1,7 +1,7 @@
 ---
 title: "GPU Optimized Math Routines in the Stan Math Library"
 author: |
-  | Rok ÄŒeÅ¡novar, Davor Sluga, Jure DemÅ¡ar, Steve Bronder, Erik Å trumbelj
+  | Rok Cešnovar, Davor Sluga, Jure Demšar, Steve Bronder, Erik Štrumbelj
 date: "Apr 16, 2018"
 output: pdf_document
 bibliography: report.bib
@@ -10,7 +10,7 @@ bibliography: report.bib
 
 ```{r include = FALSE}
 # wd
-#setwd("D:/Projects/StanCon2018")
+setwd("D:/Projects/StanCon2018")
 #setwd("d:/work/bitbucket/l1-7542_stan/StanCon2018/")
 
 # includes
@@ -19,80 +19,6 @@ library(plyr)
 library(rstan)
 library(cowplot)
 library(reshape)
-
-# helper function for plotting
-speedup_plot <- function(stan_files) {
-	# load data ----
-	stan_summary <- NULL
-	stan_summary_log <- NULL
-	
-	for (fn in stan_files) {
-		summary <- readRDS(fn)
-		
-		stan_summary <- rbind(stan_summary, data.frame(N = summary$N,
-																									 time = summary$time,
-																									 GPU = summary$GPU))
-		
-		stan_summary_log <- rbind(stan_summary_log, data.frame(N = log(summary$N, 10),
-																									 time = log(summary$time, 10),
-																									 GPU = summary$GPU))
-	}
-	
-	# get mean and CI ----
-	stan_mean <- ddply(.data = stan_summary,
-										 .variables = ~ N + GPU,
-										 .fun = summarize,
-										 time_mean = mean(time),
-										 low_time = quantile(time, 0.025, na.rm = TRUE),
-										 high_time = quantile(time, 0.975, na.rm = TRUE))
-	
-	stan_mean_log <- ddply(.data = stan_summary_log,
-										 .variables = ~ N + GPU,
-										 .fun = summarize,
-										 time_mean = mean(time),
-										 low_time = quantile(time, 0.025, na.rm = TRUE),
-										 high_time = quantile(time, 0.975, na.rm = TRUE))
-	
-	# plot ----
-	left_plot <- ggplot(data = stan_mean,
-	                    aes(x = N, y = time_mean, group = GPU, colour = GPU)) +
-	  geom_point(data = stan_summary,
-	             aes(x = N, y = time, colour = GPU),
-	             size = 4, alpha = 0.3, shape = 16) +
-		geom_line(size = 1) +
-		ylab("Time [s]") +
-		xlab("N") +
-		theme_minimal() +
-		theme(legend.position = "bottom", legend.title = element_blank()) +
-		scale_colour_manual(values = c("#fc8d59", "#91bfdb"), labels = c("CPU", "GPU"))
-	
-	
-	right_plot <- ggplot(data = stan_mean_log, 
-	                     aes(x = N, y = time_mean, group = GPU, colour = GPU)) +
-		geom_point(data = stan_summary_log, aes(x = N, y = time, colour = GPU),
-		           size = 4, alpha = 0.3, shape = 16) +
-		geom_line(size = 1) +
-		ylab(expression(log[10](time)~"[s]")) +
-		xlab(expression(log[10](N))) +
-		theme_minimal() +
-		theme(legend.position = "bottom", legend.title = element_blank()) +
-		scale_colour_manual(values = c("#fc8d59", "#91bfdb"), labels = c("CPU", "GPU"))
-	
-	plot_grid(left_plot, right_plot, ncol = 2, nrow = 1, scale = 0.9)
-}
-
-# scripts for data generation
-source("./_Simulations/GP_data_generator.R")
-source("./_Simulations/SGP_data_generator.R")
-
-# RERUN SIMULATIONS?
-# !!! WARNING: UNCOMMENTING THE TWO LINES BELOW RERUNS ALL SIMULATIONS
-# !!! THIS MIGHT TAKE SEVERAL HOURS TO COMPLETE
-# !!! YOU ALSO NEED TO SET FOLDERS FOR cmdstan and gpustan
-
-# source("./_Simulations/GP.R")
-# source("./_Simulations/SGP.R")
-
 ```
 
 # Introduction
@@ -163,7 +89,7 @@ where $f(x) = \beta(x + x^2 - x^3 + 100 \sin 2x - \alpha)$. Parameters $\beta$ a
 
 # load  results ----
 stan_files <- list.files(
-  path = "./_Simulations/_Output/GP/",
+  path = "./_Results/",
   pattern = "GP", full.names = T
 )
 
@@ -206,12 +132,81 @@ The model ran for multiple input sizes for both the CPU and GPU. The measured ti
 
 # load  results ----
 stan_files <- list.files(
-	path = "./_Simulations/_Output/GP/",
+	path = "./_Results/",
 	pattern = "GP", full.names = T
 )
 
-# plot
-speedup_plot(stan_files)
+# load data ----
+stan_summary <- NULL
+stan_summary_log <- NULL
+
+for (fn in stan_files) {
+	summary <- readRDS(fn)
+	
+	stan_summary <- rbind(stan_summary, data.frame(N = summary$N,
+																								 time = summary$time,
+																								 GPU = summary$GPU))
+	
+	stan_summary_log <- rbind(stan_summary_log, data.frame(N = log(summary$N, 10),
+																												 time = log(summary$time, 10),
+																												 GPU = summary$GPU))
+}
+
+# interpolate CPU ----
+df_cpu <- stan_summary_log[stan_summary_log$GPU == FALSE, ]
+lm_fit <- lm(time ~ N, data = df_cpu)
+
+N <- c(log(4096, 10), log(8192, 10))
+df_interpolate <- data.frame(N = N,
+														time = predict(lm_fit, newdata = data.frame(N = N)),
+														GPU = FALSE)
+
+stan_summary_log <- rbind(stan_summary_log, df_interpolate)
+
+df_interpolate$N = c(4096, 8192)
+df_interpolate$time = 10^df_interpolate$time
+stan_summary <- rbind(stan_summary, df_interpolate)
+
+# get mean and CI ----
+stan_mean <- ddply(.data = stan_summary,
+									 .variables = ~ N + GPU,
+									 .fun = summarize,
+									 time_mean = mean(time),
+									 low_time = quantile(time, 0.025, na.rm = TRUE),
+									 high_time = quantile(time, 0.975, na.rm = TRUE))
+
+stan_mean_log <- ddply(.data = stan_summary_log,
+											 .variables = ~ N + GPU,
+											 .fun = summarize,
+											 time_mean = mean(time),
+											 low_time = quantile(time, 0.025, na.rm = TRUE),
+											 high_time = quantile(time, 0.975, na.rm = TRUE))
+
+# plot ----
+left_plot <- ggplot(data = stan_mean,
+										aes(x = N, y = time_mean, group = GPU, colour = GPU)) +
+	geom_point(data = stan_summary,
+						 aes(x = N, y = time, colour = GPU),
+						 size = 4, alpha = 0.3, shape = 16) +
+	geom_line(size = 1) +
+	ylab("Time [s]") +
+	xlab("N") +
+	theme_minimal() +
+	theme(legend.position = "bottom", legend.title = element_blank()) +
+	scale_colour_manual(values = c("#fc8d59", "#91bfdb"), labels = c("CPU", "GPU"))
+
+right_plot <- ggplot(data = stan_mean_log, 
+										 aes(x = N, y = time_mean, group = GPU, colour = GPU)) +
+	geom_point(data = stan_summary_log, aes(x = N, y = time, colour = GPU),
+						 size = 4, alpha = 0.3, shape = 16) +
+	geom_line(size = 1) +
+	ylab(expression(log[10](time)~"[s]")) +
+	xlab(expression(log[10](N))) +
+	theme_minimal() +
+	theme(legend.position = "bottom", legend.title = element_blank()) +
+	scale_colour_manual(values = c("#fc8d59", "#91bfdb"), labels = c("CPU", "GPU"))
+
+plot_grid(left_plot, right_plot, ncol = 2, nrow = 1, scale = 0.9)
 ```
 
 To estimate the timing of the GPU vs. CPU routines we build a small linear regression on the simulations of the form $time \sim D_{GPU} \times N_{sims} + N_{sims} + \epsilon$ and predict the GPU and CPU times for $N = \{150, 200, 250\}$.
@@ -255,75 +250,6 @@ N & CPU & GPU\\
 \end{table}
 
 Futher tests are necessary, but basic intuition and the back of a napkin regression implies that the GPU methods will continue outpacing the CPU methods.
-
-# Example 2: Spatial Gaussian process
-
-Advances in Global Positioning System (GPS) and Geographical Information Systems (GIS) enable us to determine positions of points where we collect scientific data accurately. In turn, this spurned growth of statistical modeling of large spatial datasets in many different scientific fields. This example represents one such toy dataset. 
-
-The toy dataset and the Stan model are implemented the same way as in Max Joseph's study [@Joseph2016]. The dataset mimics data collection at $n$ different spatial locations. Each spatial location has its coordinates drawn from $\mathcal{U}(0, 1)$. The data collected at a particular point depends on a mean zero Gaussian process with an isotropic stationary exponential covariance function:
-$$[C(d)]_{i, j} = \eta^2 \cdot \text{exp}(-d_{ij} \cdot \phi))$$
-
-$$w(s) \sim GP(0, C(d))$$
-
-$$y(s) \sim \text{Poisson}(\text{exp}(X^T(s) \cdot \beta + w(s) + \mathcal{N}(0, \sigma))),$$
-
-where $d_{ij}$ is the distance between locations $s_i$ and $s_j$, $\eta^2$ is the variance parameter of the Gaussian process, $\phi$ determines how quickly the correlation in $w$ decays as distance increases, $y(s)$ is data collected at the geospatial location $s$, $X$ is an $n \times p$ design matrix, $\beta$ is a length $p$ parameter vector, and $\sigma$ is a ``nugget'' parameter. We used the following parameter values in our simulations: $\eta = 0.8, \sigma = 0.3, \phi = 7, \beta = 2$. Stan model is attached in the appendix section.
-
-Figure \ref{fig:SGP_parameters} shows that there is no difference in fitted parameters between the GPU and CPU approaches.
-
-```{r echo = FALSE, fig.cap="\\label{fig:SGP_parameters}Comparison of calculated parameters between CPU and GPU."}
-
-# load  results ----
-stan_files <- list.files(
-	path = "./_Simulations/_Output/SGP/",
-	pattern = "SGP", full.names = T
-)
-
-stan_summary <- NULL
-for (fn in stan_files) {
-	summary <- readRDS(fn)
-	
-	if (summary$N == 200)
-	{
-		stan_summary <- rbind(stan_summary, data.frame(GPU = summary$GPU,
-																								Eta = summary$parameters_fit$eta,
-																								Sigma = summary$parameters_fit$sigma,
-																								Phi = summary$parameters_fit$phi,
-																								Beta = summary$parameters_fit$beta
-																								))
-	}
-}
-
-# melt ----
-stan_melt <- melt(stan_summary, id=c("GPU"))
-
-# plot ----
-ggplot(stan_melt, aes(x = GPU, y = value, fill = GPU)) +
-  facet_wrap(~ variable, scales="free", ncol = 4) +
-  stat_boxplot(geom ='errorbar') + 
-  geom_boxplot() +
-  ylab("") +
-  xlab("Parameter") +
-  theme_minimal() +
-  theme(legend.position = "none") +
-  theme(panel.spacing.x = unit(4, "lines")) +
-  scale_x_discrete(labels=c("CPU", "GPU")) +
-  scale_fill_manual(values = c("#fc8d59", "#91bfdb"))
-```
-
-Results are shown in Figure \ref{fig:SGP_results}.
-
-```{r echo = FALSE, fig.cap="\\label{fig:SGP_results}Visualizations of speedup when using our GPU approach compared to default CPU implementation."}
-
-# load  results ----
-stan_files <- list.files(
-	path = "./_Simulations/_Output/SGP/",
-	pattern = "SGP", full.names = T
-)
-
-# plot
-speedup_plot(stan_files)
-```
 
 # Conclusion
 
@@ -396,55 +322,6 @@ generated quantities {
     y_predict[n] = normal_rng(f_predict[n], sigma);
 }
 
-```
-
-## Stan model for spatial Gaussian process
-
-```
-data {
-  int<lower = 1> N;
-  int<lower = 1> p;
-  matrix[N, p] X;
-  int<lower = 0> y[N];
-  matrix[N, N] D;
-}
-
-parameters {
-  vector[N] z;
-  real<lower=0> eta;
-  real<lower=0> phi;
-  real<lower=0> sigma;
-  vector[p] beta;
-}
-
-transformed parameters {
-  cov_matrix[N] Sigma;
-  vector[N] w;
-  real<lower = 0> eta_sq;
-  real<lower = 0> sig_sq;
-  
-  eta_sq = pow(eta, 2);
-  sig_sq = pow(sigma, 2);
-  
-  for (i in 1:(N - 1)) {
-    for (j in (i + 1):N) {
-      Sigma[i, j] = eta_sq * exp(-D[i, j] * phi);
-      Sigma[j, i] = Sigma[i, j];
-    }
-  }
-
-  for (k in 1:N) Sigma[k, k] = eta_sq + sig_sq;
-  w = cholesky_decompose(Sigma) * z;
-}
-
-model {
-  eta ~ normal(0, 1);
-  sigma ~ normal(0, 1);
-  phi ~ normal(0, 5);
-  beta ~ normal(0, 1);
-  z ~ normal(0, 1);
-  y ~ poisson_log(X * beta + w);
-}
 ```
 ## Original Computing Environment
 
