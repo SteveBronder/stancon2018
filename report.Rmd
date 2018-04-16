@@ -156,14 +156,14 @@ for (fn in stan_files) {
 df_cpu <- stan_summary_log[stan_summary_log$GPU == FALSE, ]
 lm_fit <- lm(time ~ N, data = df_cpu)
 
-N <- c(log(4096, 10), log(8192, 10))
+N <- c(log(3072, 10), log(4096, 10), log(8192, 10))
 df_interpolate <- data.frame(N = N,
 														time = predict(lm_fit, newdata = data.frame(N = N)),
 														GPU = FALSE)
 
 stan_summary_log <- rbind(stan_summary_log, df_interpolate)
 
-df_interpolate$N = c(4096, 8192)
+df_interpolate$N = c(3072, 4096, 8192)
 df_interpolate$time = 10^df_interpolate$time
 stan_summary <- rbind(stan_summary, df_interpolate)
 
