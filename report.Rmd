@@ -73,7 +73,7 @@ For larger matrices $(n > 1000)$, the algorithm is executed in 2 levels. For exa
 
 The implementation of the derivative of the Cholesky decomposition comes from the blocking method presented in [@Murray2016]. This algorithm is cache friendly and uses GPU-suitable matrix operations. Similar to the inversion and Cholesky Decomposition, the input matrix splits into smaller blocks on which we then perform various matrix operations: transpose, multiplication, lower triangular matrix inversion and subtraction. For details on the algorithm, refer to [@Murray2016].
 
-Users can access the Cholesky GPU routines by calling \texttt{cholesky\_decompose\_gpu()} and \texttt{multi_normal_cholesky_gpu()} in the stan language. In the latter, only the derivative of solving $Ax=b$ is run on the gPU. In the future, all GPU methods will be implemented in the same way so that users can make their code access the GPU routines by calling \texttt{<func\_name>\_gpu()}.
+Users can access the Cholesky GPU routines by calling \texttt{cholesky\_decompose\_gpu()} and \texttt{multi\_normal\_cholesky\_gpu()} in the stan language. In the latter, only the derivative of solving $Ax=b$ is run on the gPU. In the future, all GPU methods will be implemented in the same way so that users can make their code access the GPU routines by calling \texttt{<func\_name>\_gpu()}.
 
 # Example 1: Gaussian process regression
 
