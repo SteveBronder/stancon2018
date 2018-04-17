@@ -1,7 +1,7 @@
 ---
 title: "GPU Optimized Math Routines in the Stan Math Library"
 author: |
-  | Rok Cešnovar, Davor Sluga, Jure Demšar, Steve Bronder, Erik Štrumbelj
+  | Rok Ce?novar, Davor Sluga, Jure Dem?ar, Steve Bronder, Erik ?trumbelj
 date: "Apr 16, 2018"
 output: pdf_document
 bibliography: report.bib
@@ -154,7 +154,7 @@ for (fn in stan_files) {
 
 # interpolate CPU ----
 df_cpu <- stan_summary_log[stan_summary_log$GPU == FALSE, ]
-lm_fit <- lm(time ~ N, data = df_cpu)
+lm_fit <- lm(time ~ poly(N,2), data = df_cpu)
 
 N <- c(log(3072, 10), log(4096, 10), log(8192, 10))
 df_interpolate <- data.frame(N = N,
