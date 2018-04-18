@@ -1,5 +1,5 @@
 # directory information ----
-setwd("D:/Projects/Stan/StanCon2018")
+#setwd("D:/Projects/Stan/StanCon2018")
 cmdstan_dir <- "D:/Projects/cmdstan-2.17.1"
 gpustan_dir <- "D:/Projects/gpustan-2.17.1" 
 output_dir <- "./_Simulations/_Output"
