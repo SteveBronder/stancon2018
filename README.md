@@ -13,14 +13,14 @@ Then you should be able to run `GP.R` to produce the results, given that your co
 
 Folders:
 
- - _Figures: The paper's figures
- - _Results: Results from all of the simulations
- - _Simulations: The stan and R code that run the simulations
- ---- _Models: The stan models
- ---- GP.R: Runs the simulations
- ---- GP_data_generator: Function to generate GP data
- ---- cmdstan_interface: Helper functions to connect to cmdstan from R
- - report.Rmd: The report to generate Report.pdf, which contains a 4 page paper about our methods and results.
+- _Figures: The paper's figures
+- _Results: Results from all of the simulations
+- _Simulations: The stan and R code that run the simulations
+    - _Models: The stan models
+    - GP.R: Runs the simulations
+    - GP_data_generator: Function to generate GP data
+    - cmdstan_interface: Helper functions to connect to cmdstan from R
+- report.Rmd: The report to generate Report.pdf, which contains a 4 page paper about our methods and results.
 
 
 Abstract:

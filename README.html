@@ -131,7 +131,18 @@ $(document).ready(function () {
 </ol>
 <p>Then you should be able to run <code>GP.R</code> to produce the results, given that your computer has OpenCL and it’s drivers properly installed.</p>
 <p>Folders:</p>
-<p>_Figures: The paper’s figures _Results: Results from all of the simulations _Simulations: The stan and R code that run the simulations – _Models: The stan models – GP.R: Runs the simulations – GP_data_generator: Function to generate GP data – cmdstan_interface: Helper functions to connect to cmdstan from R report.Rmd: The report to generate Report.pdf, which contains a 4 page paper about our methods and results.</p>
+<ul>
+<li>_Figures: The paper’s figures</li>
+<li>_Results: Results from all of the simulations</li>
+<li>_Simulations: The stan and R code that run the simulations
+<ul>
+<li>_Models: The stan models</li>
+<li>GP.R: Runs the simulations</li>
+<li>GP_data_generator: Function to generate GP data</li>
+<li>cmdstan_interface: Helper functions to connect to cmdstan from R</li>
+</ul></li>
+<li>report.Rmd: The report to generate Report.pdf, which contains a 4 page paper about our methods and results.</li>
+</ul>
 <p>Abstract:</p>
 <p>The Stan Math library’s Hamilton Monte Carlo (HMC) sampler has computationally expensive draws while usually searching the target distribution more efficiently than alternative MCMC methods with fewer iterations. The bottleneck within draws makes Stan a prime candidate for GPU optimizations within samples. This project implements GPU optimizations for the Cholesky decomposition and it’s derivative in the Stan Math library <span class="citation">[@stanmath2015]</span>. This work is the first known open source implementation of the Cholesky decomposition with a GPU in an HMC setting. Furthermore, the GPU kernels use OpenCL which allows the use of these methods across any brand of GPU. While results show that GPU optimizations are not optimal for small <span class="math inline">\(N\times M\)</span> matrices, large matrices can see speedups of 7.8x while retaining the same precision as models run purely on a CPU.</p>
 <p>All the information posted here is licensed under</p>
