@@ -107,3 +107,16 @@ Nice!
 - Things are fast and precise!
 - We'll be wrapped up (hopefully) in July
 - Email: sab2287@columbia.edu
+
+
+## Bibliography
+
+Mahfoudhi, Ryma et al. “High Performance Recursive Matrix Inversion for Multicore Architectures.” 2017 International Conference on High Performance Computing & Simulation (HPCS) (2017): 675-682.
+
+Betancourt, Michael. "Robust Gaussian Processes In Stan, Part 3". Betanalpha.Github.Io, 2018, https://betanalpha.github.io/assets/case_studies/gp_part3/part3.html. 
+
+Louter-Nool, Margreet. 1992. “Block-Cholesky for Parallel Processing.” Appl. Numer. Math. 10 (1). Amsterdam, The Netherlands, The Netherlands: Elsevier Science Publishers B. V.: 37–57. doi:10.1016/0168-9274(92)90054-H.
+
+Slides/Paper/Code:
+
+- https://github.com/SteveBronder/stancon2018/tree/r_in_finance
