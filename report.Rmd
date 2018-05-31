@@ -193,7 +193,9 @@ left_plot <- ggplot(data = stan_mean,
 	xlab("N") +
 	theme_minimal() +
 	theme(legend.position = "bottom", legend.title = element_blank()) +
-	scale_colour_manual(values = c("#fc8d59", "#91bfdb"), labels = c("CPU", "GPU"))
+	scale_colour_manual(values = c("#fc8d59", "#91bfdb"), labels = c("CPU", "GPU")) 
+
+left_plot
 
 right_plot <- ggplot(data = stan_mean_log, 
 										 aes(x = N, y = time_mean, group = GPU, colour = GPU)) +
