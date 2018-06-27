@@ -1,7 +1,7 @@
 ---
 title: "GPU Optimized Math Routines in the Stan Math Library"
 author: |
-  | Rok Češnovar, Davor Sluga, Jure Demšar, Steve Bronder, Erik Štrumbelj
+  | Rok Cesnovar, Davor Sluga, Jure Demsar, Steve Bronder, Erik Strumbelj
 date: "Apr 16, 2018"
 output: pdf_document
 bibliography: report.bib
@@ -10,8 +10,7 @@ bibliography: report.bib
 
 ```{r include = FALSE}
 # wd
-#setwd("D:/Projects/StanCon2018")
-#setwd("d:/work/bitbucket/l1-7542_stan/StanCon2018/")
+setwd("D:/Projects/stancon2018")
 
 # includes
 library(ggplot2)
@@ -216,6 +215,14 @@ This project shows that implementing GPU routines in Stan result in practically 
 \newpage
 # Appendix
 
+## Repeating simulations presneted in the manuscript
+
+Since simulations that this study is based on take several days to complete the results presented in this R Markdown file are not calculated anew each time the manuscript is compiled. In order to achieve a reasonable compilation time of this manuscript we decided to use precomputed data. Meaning that when you recompile this manuscript results of simulations are not recalculated but just read from files containing results of previous completed simulations.
+
+If you wish to rerun all simulations by yourself you have to use the GP.R script inside the _Simulations folder. Newly calculated results will be saved into the _Simulations/_Output/GP folder. To replace precomputed results with the new ones you have to delete all files from the _Results folder and replace them with files from _Simulations/_Output/GP folder.
+
+Unforuntately, using the GPU routines in Stan Math Library is not exactly straightforward. To use these routines you must first install the appropriate version of the library and then recompile CmdStan. See \href{https://github.com/bstatcomp/math/wiki/OpenCL-GPU-support} for detailed instructions. Pay special attention to the last section titled Integration with CmdStan. Once you succesfully compile GpuStan with GPU support you only have to change the working and CmdStan directories on top of GP.R script and you are ready to go! Currently simulations can be run only on Windows operating system.
+
 ## Stan model for Gaussian process regression
 
 ```
@@ -262,7 +269,7 @@ parameters {
 model {
   matrix[N, N] cov =   cov_exp_quad(x, alpha, rho)
                      + diag_matrix(rep_vector(square(sigma), N));
-  matrix[N, N] L_cov = cholesky_decompose(cov);
+  matrix[N, N] L_cov = cholesky_decompose(cov); // cholesky_decompose_gpu in GPU model
 
   // P[rho < 2.0] = 0.01
   // P[rho > 10] = 0.01
