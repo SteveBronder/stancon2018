@@ -13,6 +13,22 @@ get_cmdstan_param_string <- function(num_samples = 100,
   s
 }
 
+get_os <- function(){
+  sysinf <- Sys.info()
+  if (!is.null(sysinf)){
+    os <- sysinf['sysname']
+    if (os == 'Darwin')
+      os <- "osx"
+  } else { ## mystery machine
+    os <- .Platform$OS.type
+    if (grepl("^darwin", R.version$os))
+      os <- "osx"
+    if (grepl("linux-gnu", R.version$os))
+      os <- "linux"
+  }
+  tolower(os)
+}
+
 get_samples <- function(stan_file,
                         cmdstan_dir,
                         temp_dir,
@@ -24,7 +40,14 @@ get_samples <- function(stan_file,
   experiment_name <- paste0("model_", experiment_hash) 
   data_file <- paste0(temp_dir, "/", experiment_name, "_data.R")
   samples_file <- paste0(temp_dir, "/", experiment_name, "_samples.csv")
-  exe_file <- paste0(temp_dir, "/", model_name, ".exe")
+  
+  os <- get_os()
+  
+  if (os == "windows")
+    exe_file <- paste0(temp_dir, "/", model_name, ".exe")
+  else
+    exe_file <- paste0(temp_dir, "/", model_name)
+    
   model_file <- paste0(temp_dir, "/", model_name, ".stan")
 
   if (!file.exists(model_file)) writeLines(model_code, con = model_file)
@@ -44,7 +67,7 @@ get_samples <- function(stan_file,
   # sample from model ----
   x <- microbenchmark(
     system(paste0(
-      temp_dir, "/", model_name, ".exe",
+      exe_file,
       " method=sample",
       "", param_string,
       " data file=", data_file,

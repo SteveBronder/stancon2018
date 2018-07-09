@@ -49,7 +49,7 @@ model {
   alpha ~ normal(0, 2);
   sigma ~ normal(0, 1);
 
-  y ~ multi_normal_cholesky_gpu(rep_vector(0, N), L_cov);
+  y ~ multi_normal_cholesky(rep_vector(0, N), L_cov);
 }
 
 generated quantities {
