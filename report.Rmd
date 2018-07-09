@@ -1,9 +1,11 @@
 ---
 title: "GPU Optimized Math Routines in the Stan Math Library"
 author: |
-  | Rok Cesnovar, Davor Sluga, Jure Demsar, Steve Bronder, Erik Strumbelj
+  | Rok &#268;e&#353;novar, Davor Sluga, Jure Dem&#353;ar, Steve Bronder, Erik &#352;trumbelj
 date: "Jul 9, 2018"
-output: pdf_document
+output:
+  pdf_document: default
+  html_document: default
 bibliography: report.bib
 ---
 
