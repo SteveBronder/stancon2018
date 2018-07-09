@@ -2,7 +2,7 @@
 title: "GPU Optimized Math Routines in the Stan Math Library"
 author: |
   | Rok Cesnovar, Davor Sluga, Jure Demsar, Steve Bronder, Erik Strumbelj
-date: "Apr 16, 2018"
+date: "Jul 9, 2018"
 output: pdf_document
 bibliography: report.bib
 ---
@@ -10,7 +10,7 @@ bibliography: report.bib
 
 ```{r include = FALSE}
 # wd
-setwd("D:/Projects/stancon2018")
+setwd("D:/Work/bitbucket/stancon2018")
 
 # includes
 library(ggplot2)
@@ -22,33 +22,35 @@ library(reshape)
 
 # Introduction
 
-The Stan Math library's Hamilton Monte Carlo (HMC) sampler has computationally expensive draws while usually searching the target distribution more efficiently than alternative MCMC methods with fewer iterations. The bottleneck within draws makes Stan a prime candidate for GPU optimizations within samples. This project implements GPU optimizations for the Cholesky decomposition and it's derivative in the Stan Math library [@stanmath2015]. This work is the first known open source implementation of the Cholesky decomposition with a GPU in an HMC setting. Furthermore, the GPU kernels use OpenCL which allows the use of these methods across any brand of GPU. While results show that GPU optimizations are not optimal for small $N\times M$ matrices, large matrices can see speedups of 7.8x while retaining the same precision as models run purely on a CPU. 
+The Stan library's Hamilton Monte Carlo sampler (NUTS) typically explores the target distribution more efficiently than alternative MCMC methods and requires fewer iterations. However, it requires the computation of the gradient and is computationally more expensive per iteration. The makes it an excellent candidate for GPU optimization.
+
+Our motivating example were Gaussian Process (GP) models, where the computation is dominated by the inversion of the covariance matrix of the size of the data, which is typically done through Cholesky decomposition. We implemented GPU optimizations for the Cholesky decomposition and its derivative in the Stan Math library [@stanmath2015]. This is the first known open source GPU implementation of the Cholesky decomposition in an MCMC setting. Furthermore, the GPU kernels use OpenCL and are not restricted to a particular GPU vendor. While results show that GPU optimizations are not optimal for small $n \times m$ matrices, large matrices can see speedups of 7.8x while retaining precision. 
 
 # GPU implementation
 
 <!--
 Currently, we aim at speeding up the biggest computational bottlenecks on the GPU, while the remaining (non-parallelized) Stan code is executed on the CPU. Therefore, we move the data to and from the GPU for each GPU-parallelized function. Removing this often unnecessary data transfer to and from the GPU is one of the main priorities of  future work.
 -->
-The most significant linear algebra bottlenecks in stan tend to come from the Cholesky Decomposition, it's derivative, and the derivative of solving $Ax = B$. To reduce these bottlenecks, the GPU methods implemented in the Stan Math library include:
+One of the most significant linear algebra bottlenecks in GP (and many other statistical models) is matrix inversion. In particular, the inversion of a positive semi-definite covariance matrix, which is typically done through Cholesky decomposition. This requires the computation of the decomposition, its derivative, and the derivative of solving the linear system $Ax = B$. To reduce these bottlenecks, we implemented GPU optimizations of the following Stan Math library methods:
 
 \begin{enumerate}
-\item	Matrix transpose
-\item	Multiplication of matrices with a diagonal and scalar
-\item	Subtraction of matrices
-\item	Copying submatrices
-\item	Matrix multiplication
-\item	Lower triangular matrix inverse
-\item	Cholesky decomposition
-\item First derivative of Cholesky Decomposition
+\item	matrix transpose,
+\item	multiplication of matrices with a diagonal and scalar,
+\item	subtraction of matrices,
+\item	copying submatrices,
+\item	matrix multiplication,
+\item	lower triangular matrix inverse,
+\item	Cholesky decomposition,
+\item first derivative of Cholesky decomposition.
 \end{enumerate}
 
-The execution times of methods (1-4) are negligible and thus our GPU implementations of these methods are simple and naive. For instance, in multiplication of a $m \times n$ matrix with a scalar we create $m \times n$ threads, where each thread is assigned a single multiplication. These implementations are necessary to perform methods (6-8) on the GPU.
+The execution times of methods (1-4) are negligible and thus our GPU implementations of these methods are simple and naive. For instance, in the multiplication of a $m \times n$ matrix with a scalar we create $m \times n$ threads, where each thread is assigned a single multiplication. These implementations are necessary to perform methods (6-8) on the GPU.
 
-Stan's GPU Matrix Multiplication Routines are based on the the routines in cuBLAS [@CUBLAS] and clBLAST. The matrix multiplication routines are optimized through two standard methods, assigning additional work to threads in large matrix multiplications and the use of tiling in local memory. Optimizations for specific cases are created such as $A \times A^T$. Because the result is symmetric, the routine will reduce the number of multiplications needed by one half. 
+Stan's GPU matrix multiplication routines are based on the the routines in cuBLAS [@CUBLAS] and clBLAST. The matrix multiplication routines are optimized through two standard methods: assigning additional work to threads in large matrix multiplications and the use of tiling in local memory. Specific cases allow for specific optimization. For example, $A \times A^T$. Because the result is symmetric, the routine will reduce the number of multiplications by one half. 
 
-The GPU implementations and optimizations of the lower triangular matrix inverse and the Cholesky decomposition are improvements on previous work in [@Cesnovar2017]. Details of these implementations are available in the next sections. The first derivative of the Cholesky decomposition is implemented using methods (1-7).
+The GPU implementations and optimizations of the lower triangular matrix inverse and the Cholesky decomposition are improvements on our previous work [@Cesnovar2017]. Details of these implementations are available in the following sections. The first derivative of the Cholesky decomposition is implemented using methods (1-7).
 
-The OpenCL [@StoneOpenCL2010] context which manages the devices, platforms, memory, and kernels sits in \texttt{opencl\_context\_base::getInstance()} and is built into stan using the C++11 Meyer's singleton pattern. Developers can access the context through a friend adapter class called \texttt{opencl\_context} which provides a simple wrapper API for accessing the base context.
+The OpenCL [@StoneOpenCL2010] context which manages the devices, platforms, memory, and kernels sits in \texttt{opencl\_context\_base::getInstance()} and is implemented in the Math library as a singleton. Developers can access the context through a friend adapter class called \texttt{opencl\_context} which provides a simple wrapper API for accessing the base context.
 
 ## Inverting a lower triangular matrix
 
@@ -70,19 +72,19 @@ For larger matrices $(n > 1000)$, the algorithm is executed in 2 levels. For exa
 
 ![\label{fig:blockCholesky}Blocked version of the Cholesky decomposition.](_Figures/blockCholesky.pdf)
 
-The implementation of the derivative of the Cholesky decomposition comes from the blocking method presented in [@Murray2016]. This algorithm is cache friendly and uses GPU-suitable matrix operations. Similar to the inversion and Cholesky Decomposition, the input matrix is split into smaller blocks on which the algorithm performs various matrix operations: transpose, multiplication, lower triangular matrix inversion and subtraction. For details on the algorithm, refer to [@Murray2016].
+The implementation of the derivative of the Cholesky decomposition comes from the blocking method presented in [@Murray2016]. This algorithm is cache-friendly and uses GPU-suitable matrix operations. Similar to the inversion and Cholesky Decomposition, the input matrix is split into smaller blocks on which the algorithm performs various matrix operations: transpose, multiplication, lower triangular matrix inversion and subtraction. For details on the algorithm, refer to [@Murray2016].
 
 Users can access the Cholesky GPU routines by calling \texttt{cholesky\_decompose\_gpu()} and \texttt{multi\_normal\_cholesky\_gpu()} in the stan language. In the latter, only the derivative of solving $Ax=b$ is run on the GPU. In the future, all GPU methods will be implemented in the same way so that users can make their code access the GPU routines by calling \texttt{<func\_name>\_gpu()}.
 
-# Example 1: Gaussian process regression
+# Example: GP regression
 
-Models that use large covariance matrices will tend to benefit the most from the Cholesky GPU routines. The example below uses 1D GP regression with hyperpriors as exampled in the case study [@Betancourt2017] (see appendix).
+Models that use large covariance matrices benefit from the Cholesky GPU routines. The example below uses 1D GP regression with hyperpriors from the case study [@Betancourt2017] (see the Appendix).
 
 This example uses a toy dataset based on a simple, functional relationship between $x$ and $y$ with added Gaussian noise:
 
 $$x_i \sim_{\text{iid}} U(-10,10)$$
 $$y_i | x_i \sim_{\text{iid}} N \left( f(x), \frac{1}{10} \right), i = 1..n,$$
-where $f(x) = \beta(x + x^2 - x^3 + 100 \sin 2x - \alpha)$. Parameters $\beta$ and $\alpha$ were set so that $E[f] = 0$ and $Var[f] = 1$. Figure \ref{fig:GP_fit} shows that there is no difference between GPU and CPU fits.
+where $f(x) = \beta(x + x^2 - x^3 + 100 \sin 2x - \alpha)$. Parameters $\beta$ and $\alpha$ were set so that $E[f] = 0$ and $Var[f] = 1$. Figure \ref{fig:GP_fit} shows that there is no practical difference between GPU and CPU fits (however, the solutions are not identical).
 
 ```{r echo = FALSE, fig.cap="\\label{fig:GP_fit}Comparison of CPU and GPU fits.", fig.width = 12, fig.height = 6}
 
@@ -125,9 +127,11 @@ ggplot() +
 
 ```
 
-The model ran for multiple input sizes for both the CPU and GPU\footnote{ Hardware for these experiments includes a desktop computer with an Intel Core i7-4790 CPU running at $3.6 GHz$ and a Nvidia GTX1070 GPU.}. Timing results are shown in Figure \ref{fig:GP_results} with measured times include sampling and warmup iterations, but not model compilation time. Due to unnecessary data transfers, the GPU implementation is not faster than the CPU version for smaller input sizes ($N < 750$). For larger $n$, the data transfer becomes negligible, and we can observe a speedup of $~7.8$ for $N = 5120$. Speedup measurements for larger $N$ were infeasible due to large CPU computation times. 
+We ran the model for different input sizes $n$ with and without GPU support. In both cases NUTS was used to sample from the posterior and all the settings were the same. Therefore, the only difference between the CPU and GPU experiments was that the latter peformed some Math routines on the GPU. We used a desktop computer with an Intel Core i7-4790 CPU running at $3.6 GHz$ and a Nvidia GTX1070 GPU.
 
-```{r echo = FALSE, fig.cap="\\label{fig:GP_results}Visualizations of speedup when using the GPU approach compared to the default CPU implementation. For simulations ran with the default CPU implementation executed for only simulations up to $N = 2048$, times reported for larger N are estimated from measurements for smaller N.", fig.width = 12, fig.height = 6, fig.pos = "H"}
+Timing results are shown in Figure \ref{fig:GP_results} with measured times include sampling and warmup iterations, but not model compilation time. Due to unnecessary data transfers, the GPU implementation is not faster than the CPU version for smaller input sizes ($n < 750$). For larger $n$, the data transfer becomes negligible, and we can observe a speedup of $~7.8$ for $n = 5120$. Speedup measurements for larger $n$ were infeasible due to large CPU computation times. 
+
+```{r echo = FALSE, fig.cap="\\label{fig:GP_results}Visualizations of speedup when using the GPU approach compared to the default CPU implementation. For simulations ran with the default CPU implementation executed for only simulations up to $n = 2048$, times reported for larger n are estimated from measurements for smaller n.", fig.width = 12, fig.height = 6, fig.pos = "H"}
 
 # load  results ----
 stan_files <- list.files(
@@ -210,18 +214,18 @@ plot_grid(left_plot, right_plot, ncol = 2, nrow = 1, scale = 0.9)
 
 # Conclusion
 
-This project shows that implementing GPU routines in Stan result in practically meaningful speedups. Parallelizing the Cholesky, its derivative and the derivative of solving $Ax=B$ can provide a $7.8$ fold speedups or more for programs which depend on large covariance matrices. As this project continues, future areas of research include (a) removing unnecessary data transfers to and from the GPU, which is currently our most significant bottleneck, (b) allowing \texttt{rstan} [@rstan2018] to access the GPU methods, and (c) adding GPU-parallel implementations for other computational building blocks such as other matrix methods, density calculations, and generating random variates.
+Our GPU optimized methods in Stan result in practically meaningful speedups. Parallelizing the Cholesky, its derivative and the derivative of solving $Ax=B$  provides $7.8$-fold speedups or more for programs which depend on large covariance matrices. As this project continues, we plan to (a) removing unnecessary data transfers to and from the GPU, which is currently our most significant bottleneck, (b) allow \texttt{rstan} [@rstan2018] access to the GPU methods, and (c) add GPU-optimized implementations for other computational building blocks, such as other matrix methods, density computation, and random variate generation.
 
 \newpage
 # Appendix
 
-## Repeating simulations presneted in the manuscript
+## Reproducing the simulations
 
-Since simulations that this study is based on take several days to complete the results presented in this R Markdown file are not calculated anew each time the manuscript is compiled. In order to achieve a reasonable compilation time of this manuscript we decided to use precomputed data. Meaning that when you recompile this manuscript results of simulations are not recalculated but just read from files containing results of previous completed simulations.
+Our simulations take several days to complete, so the results in this R Markdown file are not computed each time the manuscript is compiled. In order to achieve a reasonable compilation time of the R Markdown file, we decided to use precomputed results.
 
-If you wish to rerun all simulations by yourself you have to use the GP.R script inside the _Simulations folder. Newly calculated results will be saved into the _Simulations/_Output/GP folder. To replace precomputed results with the new ones you have to delete all files from the _Results folder and replace them with files from _Simulations/_Output/GP folder.
+To recompute the results, you have to use the GP.R script from the _Simulations folder. Newly calculated results will be saved into the _Simulations/_Output/GP folder. To replace precomputed results with the new ones you have to delete all files from the _Results folder and replace them with files from _Simulations/_Output/GP folder.
 
-Unforuntately, using the GPU routines in Stan Math Library is not exactly straightforward. To use these routines you must first install the appropriate version of the library and then recompile CmdStan. See \href{https://github.com/bstatcomp/math/wiki/OpenCL-GPU-support} for detailed instructions. Pay special attention to the last section titled Integration with CmdStan. Once you succesfully compile GpuStan with GPU support you only have to change the working and CmdStan directories on top of GP.R script and you are ready to go! Currently simulations can be run only on Windows operating system.
+Unforuntately, using the GPU routines in Stan Math Library is not straightforward. To use these routines you must first install the appropriate version of the library and then recompile CmdStan. See \href{https://github.com/bstatcomp/math/wiki/OpenCL-GPU-support} for detailed instructions. Pay special attention to the section Integration with CmdStan. Once you succesfully compile GpuStan with GPU support you only have to change the working and CmdStan directories at the top of the GP.R script and you are ready to go! Currently, simulations can only be run on Windows.
 
 ## Stan model for Gaussian process regression
 
