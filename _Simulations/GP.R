@@ -11,15 +11,6 @@ source("./_Simulations/cmdstan_interface.R")
 # data generation script ----
 source("./_Simulations/GP_data_generator.R")
 
-# clear previous results ----
-#old_results <- list.files(
-#  path = "./_Simulations/_Output/GP/",
-#  pattern = "GP", full.names = T
-#)
-#for (fn in old_results) {
-#  file.remove(fn)
-#}
-
 # globals ----
 notes_cpu <- "Intel i7-6700, cmdstan-2.17.1"
 notes_gpu <- "Intel i7-6700, NVIDIA GTX 1070, cmdstan-2.17.1"
