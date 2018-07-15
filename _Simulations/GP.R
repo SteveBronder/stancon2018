@@ -12,8 +12,8 @@ source("./_Simulations/cmdstan_interface.R")
 source("./_Simulations/GP_data_generator.R")
 
 # globals ----
-notes_cpu <- "Intel i7-6700, cmdstan-2.17.1"
-notes_gpu <- "Intel i7-6700, NVIDIA GTX 1070, cmdstan-2.17.1"
+notes_cpu <- "Intel i5-6600K"
+notes_gpu <- "NVIDIA GTX 1080 Ti"
 
 # flags for disabling/enabling simulations
 run_cpu <- TRUE
