@@ -12,7 +12,7 @@ bibliography: report.bib
 
 ```{r include = FALSE}
 # wd
-setwd("D:/Projects/stancon2018")
+#setwd("D:/Projects/stancon2018")
 
 # includes
 library(ggplot2)
@@ -23,16 +23,16 @@ library(cowplot)
 
 # Introduction
 
-The Stan library's Hamilton Monte Carlo sampler (NUTS) typically explores the target distribution more efficiently than alternative MCMC methods and requires fewer iterations. However, it requires the computation of the gradient and is computationally more expensive per iteration. The makes it an excellent candidate for GPU optimization.
+The Stan library's No-U-Turn sampler (NUTS) typically explores the target distribution more efficiently than alternative MCMC methods and requires fewer iterations. However, it requires the computation of the gradient and is computationally more expensive per iteration. The computationally expensive samples from NUTS makes Stan's implementation of the algorithm an excellent candidate for GPU optimization.
 
-Our motivating example were Gaussian Process (GP) models, where the computation is dominated by the inversion of the covariance matrix of the size of the data, which is typically done through Cholesky decomposition. We implemented GPU optimizations for the Cholesky decomposition and its derivative in the Stan Math library [@stanmath2015]. This is the first known open source GPU implementation of the Cholesky decomposition in an MCMC setting. Furthermore, the GPU kernels use OpenCL and are not restricted to a particular GPU vendor. While results show that GPU optimizations are not optimal for small $n \times m$ matrices, large matrices can see speedups of 6x while retaining precision. 
+This research is motivated by large Gaussian Process (GP) models, where the computation is dominated by the inversion of the covariance matrix, which is typically done within the Cholesky decomposition. We implemente GPU optimizations for the Cholesky decomposition and its derivative in the Stan Math library [@stanmath2015]. This is the first known open source GPU implementation of the Cholesky decomposition for automatic differentation. Furthermore, the GPU kernels use OpenCL so the implimentation is not restricted to a particular GPU vendor. Experimental results show that GPU optimizations are not optimal for small $n \times m$ matrices, however $N=5000$ matrices can see speedups of 6x while retaining precision. 
 
-# GPU implementation
+# GPU Implementation
 
 <!--
 Currently, we aim at speeding up the biggest computational bottlenecks on the GPU, while the remaining (non-parallelized) Stan code is executed on the CPU. Therefore, we move the data to and from the GPU for each GPU-parallelized function. Removing this often unnecessary data transfer to and from the GPU is one of the main priorities of  future work.
 -->
-One of the most significant linear algebra bottlenecks in GP (and many other statistical models) is matrix inversion. In particular, the inversion of a positive semi-definite covariance matrix, which is typically done through Cholesky decomposition. This requires the computation of the decomposition, its derivative, and the derivative of solving the linear system $Ax = B$. To reduce these bottlenecks, we implemented GPU optimizations of the following Stan Math library methods:
+One of the most significant linear algebra bottlenecks in Gaussian Processes (and many other statistical models) is matrix inversion. In particular, the inversion of a positive semi-definite covariance matrix, which is typically done through Cholesky decomposition. This requires the computation of the decomposition, its derivative, and the derivative of solving the linear system $Ax = B$. To reduce these bottlenecks, we implemented GPU optimizations of the following Stan Math library methods:
 
 \begin{enumerate}
 \item	matrix transpose,
@@ -47,11 +47,13 @@ One of the most significant linear algebra bottlenecks in GP (and many other sta
 
 The execution times of methods (1-4) are negligible and thus our GPU implementations of these methods are simple and naive. For instance, in the multiplication of a $m \times n$ matrix with a scalar we create $m \times n$ threads, where each thread is assigned a single multiplication. These implementations are necessary to perform methods (6-8) on the GPU.
 
-Stan's GPU matrix multiplication routines are based on the the routines in cuBLAS [@CUBLAS] and clBLAST. The matrix multiplication routines are optimized through two standard methods: assigning additional work to threads in large matrix multiplications and the use of tiling in local memory. Specific cases allow for specific optimization. For example, $A \times A^T$. Because the result is symmetric, the routine will reduce the number of multiplications by one half. 
+Stan's GPU matrix multiplication routines are based on the the routines in cuBLAS [@CUBLAS] and clBLAST. The matrix multiplication routines are optimized through two standard methods: assigning additional work to threads in large matrix multiplications and the use of tiling in local memory. Specific cases allow for specific optimization. For example, the result of $A \times A^T$ is symmetric and so the routine reduces the number of multiplications by one half. 
 
-The GPU implementations and optimizations of the lower triangular matrix inverse and the Cholesky decomposition are improvements on our previous work [@Cesnovar2017]. Details of these implementations are available in the following sections. The first derivative of the Cholesky decomposition is implemented using methods (1-7).
+The optimizations of the lower triangular matrix inverse and the Cholesky decomposition are improvements on the work in [@Cesnovar2017]. Details of these implementations are available in the following sections. The first derivative of the Cholesky decomposition is implemented using methods (1-7).
 
 The OpenCL [@StoneOpenCL2010] context which manages the devices, platforms, memory, and kernels sits in \texttt{opencl\_context\_base::getInstance()} and is implemented in the Math library as a singleton. Developers can access the context through a friend adapter class called \texttt{opencl\_context} which provides a simple wrapper API for accessing the base context.
+
+Matrices on the GPU device are handled by the \texttt{matrix\_gpu} class. When operating on GPUs, making copies of objects is one of the most expensive operations. To reduce this, a number of methods for \texttt{matrix\_gpu} operations directly manipulate the matrix inplace instead of making a copy like other base Stan matrix methods. To reduce confusion on when operations on GPU matrices cause a copy, all methods called from within the \texttt{matrix\_gpu} class will operate on the objects memory will function calls in the stan math library will create a copy. For example, users can transpose the lower triangular of a \texttt{matrix\_gpu} object \texttt{Foo} by calling \texttt{Foo.triangular\_transpose<stan::math::Lower>()}. Similary, the lower triangular can be extracted from the \texttt{matrix\_gpu} object \texttt{Foo} into \texttt{Doo} by calling \texttt{matrix\_gpu Doo = copy\_triangular<stan::math::Lower>(Foo)}.
 
 ## Inverting a lower triangular matrix
 
@@ -198,9 +200,26 @@ right_plot <- ggplot(data = stan_mean_log,
 plot_grid(left_plot, right_plot, ncol = 2, nrow = 1, scale = 0.9)
 ```
 
+```{r, echo = FALSE, results='asis'}
+library(data.table)
+library(xtable)
+options(xtable.comment = FALSE)
+stan_mean2 = as.data.table(stan_mean)
+stan_mean2[GPU == TRUE, Device := "GPU"]
+stan_mean2[GPU == FALSE, Device := "CPU"]
+stan_mean2[, GPU := NULL]
+stan_mean2[, time_mean := round(time_mean / 60 , 2)]
+stan_mean2[, `:=`(low_time = NULL, high_time = NULL)]
+setnames(stan_mean2, colnames(stan_mean2), c("N", "Time", "Device"))
+setcolorder(stan_mean2, c(1,3,2))
+stan_mean2 = dcast(stan_mean2, N~Device, value.var = "Time")
+xtable::xtable(stan_mean2, caption = c("Timings for All iterations of by device type in minutes. Note the GPU version does not start seeing speedups until after $N > 512$."))
+
+```
+
 # Conclusion
 
-Our GPU optimized methods in Stan result in practically meaningful speedups. Parallelizing the Cholesky, its derivative and the derivative of solving $Ax=B$  provides $6$-fold speedups or more for programs which depend on large covariance matrices. As this project continues, we plan to (a) removing unnecessary data transfers to and from the GPU, which is currently our most significant bottleneck, (b) allow \texttt{rstan} [@rstan2018] access to the GPU methods, and (c) add GPU-optimized implementations for other computational building blocks, such as other matrix methods, density computation, and random variate generation.
+The GPU optimized methods in Stan result in practically meaningful speedups. Parallelizing the Cholesky, its derivative and the derivative of solving $Ax=B$  provides $6$-fold speedups or more for programs which depend on large covariance matrices. As this project continues, we plan to (a) removing unnecessary data transfers to and from the GPU, which is currently our most significant bottleneck, (b) allow \texttt{rstan} [@rstan2018] access to the GPU methods, and (c) add GPU-optimized implementations for other computational building blocks, such as other matrix methods, density computation, and random variate generation.
 
 \newpage
 # Appendix
