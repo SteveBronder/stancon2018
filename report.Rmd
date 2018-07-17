@@ -19,6 +19,8 @@ library(ggplot2)
 library(plyr)
 library(rstan)
 library(cowplot)
+library(data.table)
+library(xtable)
 ```
 
 # Introduction
@@ -132,7 +134,7 @@ ggplot() +
 
 We ran the model for different input sizes $n$ with and without GPU support. In both cases NUTS was used to sample from the posterior and all the settings were the same. Therefore, the only difference between the CPU and GPU experiments was that the latter peformed some Math routines on the GPU. We used a desktop computer with an Intel Core i5-6600K CPU running at $3.5 GHz$ and a Nvidia GTX 1080 Ti GPU.
 
-Timing results are shown in Figure \ref{fig:GP_results} with measured times include sampling and warmup iterations, but not model compilation time. Due to unnecessary data transfers, the GPU implementation is not faster than the CPU version for smaller input sizes ($n < 512$). For larger $n$, the data transfer becomes negligible, and we can observe a speedup of $~6$ for $n = 5092$. Speedup measurements for larger $n$ were infeasible due to large CPU computation times.
+Timing results are shown in Figure \ref{fig:GP_results} and in Table \ref{tab:GP_results} with measured times include sampling and warmup iterations, but not model compilation time. Due to unnecessary data transfers, the GPU implementation is not faster than the CPU version for smaller input sizes ($n < 512$). For larger $n$, the data transfer becomes negligible, and we can observe a speedup of $~6$ for $n = 5092$. Speedup measurements for larger $n$ were infeasible due to large CPU computation times.
 
 ```{r echo = FALSE, fig.cap="\\label{fig:GP_results}Visualizations of speedup when using the GPU approach compared to the default CPU implementation.", fig.width = 12, fig.height = 6, fig.pos = "H"}
 
@@ -201,8 +203,6 @@ plot_grid(left_plot, right_plot, ncol = 2, nrow = 1, scale = 0.9)
 ```
 
 ```{r, echo = FALSE, results='asis'}
-library(data.table)
-library(xtable)
 options(xtable.comment = FALSE)
 stan_mean2 = as.data.table(stan_mean)
 stan_mean2[GPU == TRUE, Device := "GPU"]
@@ -213,7 +213,7 @@ stan_mean2[, `:=`(low_time = NULL, high_time = NULL)]
 setnames(stan_mean2, colnames(stan_mean2), c("N", "Time", "Device"))
 setcolorder(stan_mean2, c(1,3,2))
 stan_mean2 = dcast(stan_mean2, N~Device, value.var = "Time")
-xtable::xtable(stan_mean2, caption = c("Timings for All iterations of by device type in minutes. Note the GPU version does not start seeing speedups until after $N > 512$."))
+xtable::xtable(stan_mean2, label="tab:GP_results", caption = c("Timings by device type in minutes. Note the GPU version does not start seeing speedups until after $N > 512$."))
 
 ```
 
