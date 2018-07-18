@@ -2,7 +2,7 @@ The OpenCL methods to be presented at stancon 2018
 
 To run these, download the following GPU branch and place it in a local folder
 
-https://github.com/rok-cesnovar/math/tree/gpu_stanmathcl
+https://github.com/bstatcomp/math/tree/stancon2018
 
 In the `_Simulations/GP.R` file add at the top:
 
