@@ -1,7 +1,7 @@
 ---
 title: "Stan Can Use GPUs Now!"
 subtitle: "(almost!)"
-author: Steve Bronder
+author: Rok Češnovar, Davor Sluga, Jure Demšar, Steve Bronder, Erik Štrumbelj
 date: June 1st, 2018
 output: ioslides_presentation
 ---
