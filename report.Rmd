@@ -219,6 +219,10 @@ xtable::xtable(stan_mean2, label="tab:GP_results", caption = c("Timings by devic
 
 The GPU optimized methods in Stan result in practically meaningful speedups. Parallelizing the Cholesky, its derivative and the derivative of solving $Ax=B$  provides $6$-fold speedups or more for programs which depend on large covariance matrices. As this project continues, we plan to (a) removing unnecessary data transfers to and from the GPU, which is currently our most significant bottleneck, (b) allow \texttt{rstan} [@rstan2018] access to the GPU methods, and (c) add GPU-optimized implementations for other computational building blocks, such as other matrix methods, density computation, and random variate generation.
 
+# Acknowledgment
+
+We gratefully acknowledge the support of NVIDIA Corporation with the donation of the Titan Xp GPU used for this research.
+
 \newpage
 # Appendix
 
